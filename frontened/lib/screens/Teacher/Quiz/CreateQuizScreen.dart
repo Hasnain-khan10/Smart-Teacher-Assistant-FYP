@@ -124,7 +124,7 @@ class _TeacherCreateQuizScreenState
                             TeacherManuallyQuizScreen(
                           courseId: widget.courseId,
                           quizTitle: title,
-                          
+
                         ),
                       ),
                     );

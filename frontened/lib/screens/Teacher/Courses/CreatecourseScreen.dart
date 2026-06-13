@@ -6,7 +6,6 @@ import 'package:frontened/models/course_model.dart';
 import 'package:frontened/screens/Teacher/Courses/CourseDetailScreen.dart';
 import 'package:provider/provider.dart';
 
-
 class TeacherCreateCourseScreen extends StatefulWidget {
   static const String createCourse = '/create-course';
   final List<Quiz> quiz;
@@ -79,7 +78,6 @@ class _TeacherCreateCourseScreenState
       instructorController.clear();
       selectedSemester = null;
 
-      /// Navigate (kept same as your logic)
       Future.delayed(const Duration(milliseconds: 300), () {
         Navigator.push(
           context,
@@ -112,15 +110,10 @@ class _TeacherCreateCourseScreenState
     final provider = Provider.of<CourseProvider>(context);
 
     return Scaffold(
+      backgroundColor: Colors.white, /// 🔥 PURE WHITE ENFORCED
       resizeToAvoidBottomInset: true,
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFFF8F9FD), Color(0xFFEDEBFF)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
+        color: Colors.white, /// 🔥 PURPLE GRADIENT COMPLETELY REMOVED
         child: SafeArea(
           child: SingleChildScrollView(
             child: Padding(
@@ -136,7 +129,7 @@ class _TeacherCreateCourseScreenState
                       GestureDetector(
                         onTap: () => Navigator.pop(context),
                         child:
-                        const Icon(Icons.arrow_back_ios, size: 20),
+                        const Icon(Icons.arrow_back_ios, size: 20, color: Colors.black87),
                       ),
                       const SizedBox(width: 10),
                       const Expanded(
@@ -146,6 +139,7 @@ class _TeacherCreateCourseScreenState
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w700,
+                            color: Colors.black87,
                           ),
                         ),
                       ),
@@ -154,15 +148,23 @@ class _TeacherCreateCourseScreenState
                   ),
 
                   const SizedBox(height: 20),
-                  const Text("Enter course details"),
+                  const Text("Enter course details", style: TextStyle(color: Colors.black54)),
                   const SizedBox(height: 18),
 
-                  /// FORM
+                  /// FORM WITH CLEAN ACCENTS
                   Container(
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.95),
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: Colors.grey.shade200),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.02),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        )
+                      ],
                     ),
                     child: Column(
                       children: [
@@ -174,13 +176,15 @@ class _TeacherCreateCourseScreenState
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey),
+                            border: Border.all(color: Colors.grey.shade300, width: 1.5),
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: DropdownButtonHideUnderline(
                             child: DropdownButton<String>(
                               value: selectedSemester,
-                              hint: const Text("Select Semester"),
+                              dropdownColor: Colors.white,
+                              style: const TextStyle(color: Colors.black87, fontSize: 16),
+                              hint: const Text("Select Semester", style: TextStyle(color: Colors.black45)),
                               isExpanded: true,
                               items: semesters
                                   .map((e) => DropdownMenuItem(
@@ -200,8 +204,7 @@ class _TeacherCreateCourseScreenState
                         const SizedBox(height: 14),
                         _inputField("Credit Hours", creditController),
                         const SizedBox(height: 14),
-                        _inputField("Instructor Name",
-                            instructorController),
+                        _inputField("Instructor Name", instructorController),
                       ],
                     ),
                   ),
@@ -237,7 +240,7 @@ class _TeacherCreateCourseScreenState
 
                   const SizedBox(height: 12),
 
-                  /// JOIN LINK
+                  /// JOIN LINK CONTAINER
                   if (joinLink != null)
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -251,9 +254,9 @@ class _TeacherCreateCourseScreenState
                         children: [
                           const Text("Join Link:",
                               style: TextStyle(
-                                  fontWeight: FontWeight.bold)),
+                                  fontWeight: FontWeight.bold, color: Colors.black87)),
                           const SizedBox(height: 8),
-                          SelectableText(joinLink!),
+                          SelectableText(joinLink!, style: const TextStyle(color: Colors.black87)),
                           const SizedBox(height: 10),
                           ElevatedButton(
                             onPressed: copyLink,
@@ -265,7 +268,7 @@ class _TeacherCreateCourseScreenState
 
                   const SizedBox(height: 20),
 
-                  /// COURSE DETAIL BUTTON (KEPT SAME)
+                  /// COURSE DETAIL BUTTON
                   if (provider.selectedCourse != null)
                     GestureDetector(
                       onTap: () {
@@ -323,13 +326,15 @@ class _TeacherCreateCourseScreenState
       height: 54,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey),
+        border: Border.all(color: Colors.grey.shade300, width: 1.5),
         borderRadius: BorderRadius.circular(16),
       ),
       child: TextField(
         controller: controller,
+        style: const TextStyle(color: Colors.black87),
         decoration: InputDecoration(
           hintText: hint,
+          hintStyle: const TextStyle(color: Colors.black45),
           border: InputBorder.none,
         ),
       ),

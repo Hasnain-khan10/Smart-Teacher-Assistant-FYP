@@ -251,91 +251,91 @@ class _TeacherAIQuestionQuizScreenState
               child: Column(
                 crossAxisAlignment:
                     CrossAxisAlignment.start,
-              
+
                 children: [
-              
+
                   // ======================================
                   // HEADER
                   // ======================================
                   Row(
                     children: [
-              
+
                       GestureDetector(
                         onTap: () =>
                             Navigator.pop(
                           context,
                         ),
-              
+
                         child: const Icon(
                           Icons.arrow_back_ios,
                           size: 20,
                         ),
                       ),
-              
+
                       const SizedBox(
                         width: 10,
                       ),
-              
+
                       const Expanded(
                         child: Text(
                           "AI Quiz Generation",
-              
+
                           textAlign:
                               TextAlign.center,
-              
+
                           style: TextStyle(
                             fontSize: 20,
-              
+
                             fontWeight:
                                 FontWeight.w700,
-              
+
                             color:
                                 AppColors
                                     .textPrimary,
                           ),
                         ),
                       ),
-              
+
                       const SizedBox(
                         width: 20,
                       ),
                     ],
                   ),
-              
+
                   const SizedBox(
                     height: 20,
                   ),
-              
+
                   // ======================================
                   // COURSE
                   // ======================================
                   Text(
                     widget.quizTitle,
-              
+
                     style: const TextStyle(
                       fontWeight:
                           FontWeight.w600,
-              
+
                       color:
                           AppColors.textPrimary,
                     ),
                   ),
-              
+
                   const SizedBox(height: 6),
-              
+
                   const Text(
                     "Generate AI Question Quiz PDF",
-              
+
                     style: TextStyle(
                       fontSize: 13,
-              
+
                       color:
                           AppColors.textSecondary,
                     ),
                   ),
-              
+
                   const SizedBox(height: 20),
-              
+
                   // ======================================
                   // PROMPT FIELD
                   // ======================================
@@ -344,52 +344,52 @@ class _TeacherAIQuestionQuizScreenState
                         const EdgeInsets.all(
                       14,
                     ),
-              
+
                     decoration: BoxDecoration(
                       color: Colors.white,
-              
+
                       borderRadius:
                           BorderRadius.circular(
                         18,
                       ),
-              
+
                       border: Border.all(
                         color:
                             AppColors.border,
                       ),
                     ),
-              
+
                     child: Column(
                       crossAxisAlignment:
                           CrossAxisAlignment
                               .start,
-              
+
                       children: [
-              
+
                         const Text(
                           "AI Prompt",
-              
+
                           style: TextStyle(
                             fontWeight:
                                 FontWeight.w600,
                           ),
                         ),
-              
+
                         const SizedBox(
                           height: 10,
                         ),
-              
+
                         TextField(
                           controller:
                               _promptController,
-              
+
                           maxLines: 5,
-              
+
                           decoration:
                               const InputDecoration(
                             hintText:
                                 "Generate important short and long questions from uploaded PDF focusing on definitions, theory, concepts and problem solving.",
-              
+
                             border:
                                 InputBorder.none,
                           ),
@@ -397,50 +397,50 @@ class _TeacherAIQuestionQuizScreenState
                       ],
                     ),
                   ),
-              
+
                   const SizedBox(height: 16),
-              
+
                   // ======================================
                   // FILE PICKER
                   // ======================================
                   GestureDetector(
                     onTap: _pickFile,
-              
+
                     child: Container(
                       width: double.infinity,
-              
+
                       padding:
                           const EdgeInsets.all(
                         16,
                       ),
-              
+
                       decoration: BoxDecoration(
                         color: Colors.white,
-              
+
                         borderRadius:
                             BorderRadius.circular(
                           18,
                         ),
-              
+
                         border: Border.all(
                           color:
                               AppColors.border,
                         ),
                       ),
-              
+
                       child: Row(
                         children: [
-              
+
                           const Icon(
                             Icons.upload_file,
                             color:
                                 AppColors.primary,
                           ),
-              
+
                           const SizedBox(
                             width: 12,
                           ),
-              
+
                           Expanded(
                             child: Text(
                               _selectedFile ==
@@ -450,7 +450,7 @@ class _TeacherAIQuestionQuizScreenState
                                       .path
                                       .split("/")
                                       .last,
-              
+
                               style: TextStyle(
                                 color:
                                     _selectedFile ==
@@ -465,9 +465,9 @@ class _TeacherAIQuestionQuizScreenState
                       ),
                     ),
                   ),
-              
+
                   const SizedBox(height: 16),
-              
+
                   // ======================================
                   // DIFFICULTY
                   // ======================================
@@ -477,45 +477,45 @@ class _TeacherAIQuestionQuizScreenState
                       horizontal: 14,
                       vertical: 4,
                     ),
-              
+
                     decoration: BoxDecoration(
                       color: Colors.white,
-              
+
                       borderRadius:
                           BorderRadius.circular(
                         18,
                       ),
-              
+
                       border: Border.all(
                         color:
                             AppColors.border,
                       ),
                     ),
-              
+
                     child:
                         DropdownButtonHideUnderline(
                       child:
                           DropdownButton<String>(
                         value: _difficulty,
-              
+
                         isExpanded: true,
-              
+
                         items: const [
-              
+
                           DropdownMenuItem(
                             value: "easy",
                             child: Text(
                               "Easy",
                             ),
                           ),
-              
+
                           DropdownMenuItem(
                             value: "medium",
                             child: Text(
                               "Medium",
                             ),
                           ),
-              
+
                           DropdownMenuItem(
                             value: "hard",
                             child: Text(
@@ -523,9 +523,9 @@ class _TeacherAIQuestionQuizScreenState
                             ),
                           ),
                         ],
-              
+
                         onChanged: (value) {
-              
+
                           setState(() {
                             _difficulty =
                                 value!;
@@ -534,9 +534,9 @@ class _TeacherAIQuestionQuizScreenState
                       ),
                     ),
                   ),
-              
+
                   const SizedBox(height: 16),
-              
+
                   // ======================================
                   // QUIZ TYPE
                   // ======================================
@@ -546,45 +546,45 @@ class _TeacherAIQuestionQuizScreenState
                       horizontal: 14,
                       vertical: 4,
                     ),
-              
+
                     decoration: BoxDecoration(
                       color: Colors.white,
-              
+
                       borderRadius:
                           BorderRadius.circular(
                         18,
                       ),
-              
+
                       border: Border.all(
                         color:
                             AppColors.border,
                       ),
                     ),
-              
+
                     child:
                         DropdownButtonHideUnderline(
                       child:
                           DropdownButton<String>(
                         value: _quizType,
-              
+
                         isExpanded: true,
-              
+
                         items: const [
-              
+
                           DropdownMenuItem(
                             value: "short",
                             child: Text(
                               "Short Questions",
                             ),
                           ),
-              
+
                           DropdownMenuItem(
                             value: "long",
                             child: Text(
                               "Long Questions",
                             ),
                           ),
-              
+
                           DropdownMenuItem(
                             value: "both",
                             child: Text(
@@ -592,9 +592,9 @@ class _TeacherAIQuestionQuizScreenState
                             ),
                           ),
                         ],
-              
+
                         onChanged: (value) {
-              
+
                           setState(() {
                             _quizType =
                                 value!;
@@ -603,9 +603,9 @@ class _TeacherAIQuestionQuizScreenState
                       ),
                     ),
                   ),
-              
+
                   const SizedBox(height: 16),
-              
+
                   // ======================================
                   // SHORT QUESTIONS
                   // ======================================
@@ -613,37 +613,37 @@ class _TeacherAIQuestionQuizScreenState
                       _quizType == "both")
                     Row(
                       children: [
-              
+
                         Expanded(
                           child: _textField(
                             label:
                                 "Short Count",
-              
+
                             controller:
                                 _shortCountController,
                           ),
                         ),
-              
+
                         const SizedBox(
                           width: 12,
                         ),
-              
+
                         Expanded(
                           child: _textField(
                             label:
                                 "Marks Each",
-              
+
                             controller:
                                 _shortEachMarksController,
                           ),
                         ),
                       ],
                     ),
-              
+
                   if (_quizType == "short" ||
                       _quizType == "both")
                     const SizedBox(height: 16),
-              
+
                   // ======================================
                   // LONG QUESTIONS
                   // ======================================
@@ -651,35 +651,35 @@ class _TeacherAIQuestionQuizScreenState
                       _quizType == "both")
                     Row(
                       children: [
-              
+
                         Expanded(
                           child: _textField(
                             label:
                                 "Long Count",
-              
+
                             controller:
                                 _longCountController,
                           ),
                         ),
-              
+
                         const SizedBox(
                           width: 12,
                         ),
-              
+
                         Expanded(
                           child: _textField(
                             label:
                                 "Marks Each",
-              
+
                             controller:
                                 _longEachMarksController,
                           ),
                         ),
                       ],
                     ),
-              
+
                   SizedBox(height: 20),
-              
+
                   // ======================================
                   // BUTTON
                   // ======================================
@@ -688,10 +688,10 @@ class _TeacherAIQuestionQuizScreenState
                         _isGenerating
                             ? null
                             : _generateQuiz,
-              
+
                     child: Container(
                       height: 58,
-              
+
                       decoration: BoxDecoration(
                         gradient:
                             const LinearGradient(
@@ -700,23 +700,23 @@ class _TeacherAIQuestionQuizScreenState
                             AppColors.secondary,
                           ],
                         ),
-              
+
                         borderRadius:
                             BorderRadius.circular(
                           18,
                         ),
-              
+
                         boxShadow: [
-              
+
                           BoxShadow(
                             color: AppColors
                                 .primary
                                 .withValues(
                               alpha: 0.3,
                             ),
-              
+
                             blurRadius: 18,
-              
+
                             offset:
                                 const Offset(
                               0,
@@ -725,46 +725,46 @@ class _TeacherAIQuestionQuizScreenState
                           ),
                         ],
                       ),
-              
+
                       child: Center(
                         child:
                             _isGenerating
                                 ? const SizedBox(
                                     height: 24,
                                     width: 24,
-              
+
                                     child:
                                         CircularProgressIndicator(
                                       color:
                                           Colors
                                               .white,
-              
+
                                       strokeWidth:
                                           2,
                                     ),
                                   )
                                 : const Text(
                                     "Generate Quiz",
-              
+
                                     style: TextStyle(
                                       color:
                                           Colors
                                               .white,
-              
+
                                       fontWeight:
                                           FontWeight
                                               .w600,
-              
+
                                       fontSize: 16,
                                     ),
                                   ),
                       ),
                     ),
                   ),
-              
+
                   const SizedBox(height: 12),
                 ],
-                          
+
             ),
           ),
         ),

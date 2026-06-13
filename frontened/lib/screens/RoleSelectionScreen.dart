@@ -4,6 +4,8 @@ import 'package:frontened/screens/Teacher/Teacher_Login.dart';
 import 'package:frontened/services/storage_service.dart';
 import 'package:frontened/utils/Auth_Widgets/AppLogo.dart';
 
+import '../main.dart';
+
 class RoleSelectionScreen extends StatefulWidget {
   static const String routeName = '/role-selection';
   static const String teacherRouteName = '/role-selection';
@@ -99,7 +101,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: selectedRole == null
                         ? Colors.grey.shade300
-                        : const Color(0xff2563EB),
+                        : AppColors.primary,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),

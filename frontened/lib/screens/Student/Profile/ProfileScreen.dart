@@ -289,7 +289,7 @@ class _StudentProfileScreenState
                   );
                 }
 
-                              
+
 
                                 if (success) {
                                   Navigator.pop(context);

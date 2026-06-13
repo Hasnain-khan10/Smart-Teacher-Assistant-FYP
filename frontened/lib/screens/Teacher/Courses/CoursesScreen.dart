@@ -24,14 +24,12 @@ class TeacherCoursesScreen extends StatefulWidget {
 class _TeacherCoursesScreenState extends State<TeacherCoursesScreen> {
   String? expandedCourseId;
 
-  /// 🔥 SEARCH CONTROLLER ADDED (ONLY ADDITION)
   final TextEditingController searchController = TextEditingController();
   String searchQuery = "";
 
   @override
   void initState() {
     super.initState();
-
     Future.microtask(() {
       context.read<CourseProvider>().fetchCourses();
     });
@@ -44,13 +42,11 @@ class _TeacherCoursesScreenState extends State<TeacherCoursesScreen> {
     final sortedCourses = [...provider.courses];
     sortedCourses.sort((a, b) => b.id.compareTo(a.id));
 
-    /// 🔥 SEARCH FILTER LOGIC (ONLY ADDITION)
     List<CourseModel> applyFilter(List<CourseModel> list) {
       if (searchQuery.isEmpty) return list;
 
       return list.where((c) {
         final q = searchQuery.toLowerCase();
-
         return c.title.toLowerCase().contains(q) ||
             c.courseCode.toLowerCase().contains(q) ||
             (c.teacherName ?? "").toLowerCase().contains(q);
@@ -64,17 +60,9 @@ class _TeacherCoursesScreenState extends State<TeacherCoursesScreen> {
     applyFilter(sortedCourses.where((c) => c.progress >= 100).toList());
 
     return Scaffold(
+      backgroundColor: Colors.white, /// 🔥 PURE WHITE BACKGROUND ENFORCED
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Color(0xFFF8F9FD),
-              Color(0xFFEDEBFF),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
+        color: Colors.white, /// 🔥 PURPLE GRADIENT COMPLETELY REMOVED
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -82,10 +70,10 @@ class _TeacherCoursesScreenState extends State<TeacherCoursesScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
 
-                /// HEADER (UNCHANGED)
+                /// HEADER
                 Row(
                   children: [
-                    const Icon(Icons.menu, size: 24),
+                    const Icon(Icons.menu, size: 24, color: AppColors.textPrimary),
                     const SizedBox(width: 12),
                     const Expanded(
                       child: Text(
@@ -104,7 +92,7 @@ class _TeacherCoursesScreenState extends State<TeacherCoursesScreen> {
 
                 const SizedBox(height: 18),
 
-                /// CREATE BUTTON (UNCHANGED)
+                /// CREATE BUTTON
                 GestureDetector(
                   onTap: () {
                     Navigator.push(
@@ -144,7 +132,7 @@ class _TeacherCoursesScreenState extends State<TeacherCoursesScreen> {
 
                 const SizedBox(height: 10),
 
-                /// VIEW DETAIL BUTTON (UNCHANGED)
+                /// VIEW DETAIL BUTTON
                 GestureDetector(
                   onTap: () {
                     if (sortedCourses.isEmpty) {
@@ -187,13 +175,14 @@ class _TeacherCoursesScreenState extends State<TeacherCoursesScreen> {
 
                 const SizedBox(height: 16),
 
-                /// 🔥 SEARCH BAR (ONLY NEW ADDITION)
+                /// SEARCH BAR FIXED WITH SUBTLE BORDER
                 Container(
                   height: 52,
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.9),
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.grey.shade300),
                   ),
                   child: TextField(
                     controller: searchController,
@@ -202,10 +191,12 @@ class _TeacherCoursesScreenState extends State<TeacherCoursesScreen> {
                         searchQuery = val;
                       });
                     },
+                    style: const TextStyle(color: Colors.black87),
                     decoration: const InputDecoration(
                       border: InputBorder.none,
-                      icon: Icon(Icons.search),
+                      icon: Icon(Icons.search, color: Colors.grey),
                       hintText: "Search courses...",
+                      hintStyle: TextStyle(color: Colors.black45),
                     ),
                   ),
                 ),
@@ -216,37 +207,32 @@ class _TeacherCoursesScreenState extends State<TeacherCoursesScreen> {
                   child: provider.isLoading
                       ? _buildShimmerList()
                       : provider.courses.isEmpty
-                      ? const Center(child: Text("No courses available"))
+                      ? const Center(child: Text("No courses available", style: TextStyle(color: Colors.black54)))
                       : RefreshIndicator(
                     onRefresh: () =>
                         context.read<CourseProvider>().fetchCourses(),
                     child: ListView(
                       children: [
-
                         const Text(
                           "Current Courses",
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
                           ),
                         ),
-
                         const SizedBox(height: 12),
-
                         ...currentCourses.take(15).map((c) => _courseCard(c)),
-
                         const SizedBox(height: 20),
-
                         const Text(
                           "Previous Courses",
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
                           ),
                         ),
-
                         const SizedBox(height: 12),
-
                         ...previousCourses.take(15).map((c) => _courseCard(c)),
                       ],
                     ),
@@ -260,7 +246,6 @@ class _TeacherCoursesScreenState extends State<TeacherCoursesScreen> {
     );
   }
 
-  /// ================= COURSE CARD (UNCHANGED) =================
   Widget _courseCard(CourseModel course) {
     final isExpanded = expandedCourseId == course.id;
 
@@ -279,12 +264,19 @@ class _TeacherCoursesScreenState extends State<TeacherCoursesScreen> {
         margin: const EdgeInsets.only(bottom: 14),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.95),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.grey.shade200),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            )
+          ],
         ),
         child: Column(
           children: [
-
             Row(
               children: [
                 Container(
@@ -302,15 +294,13 @@ class _TeacherCoursesScreenState extends State<TeacherCoursesScreen> {
                   child: const Icon(Icons.auto_awesome,
                       color: AppColors.primary),
                 ),
-
                 const SizedBox(width: 12),
-
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(course.title,
-                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                          style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
                       const SizedBox(height: 4),
                       Text(
                         "${course.teacherName ?? "Unknown"} • ${course.courseCode} • ${course.creditHours} Credit Hour",
@@ -322,12 +312,12 @@ class _TeacherCoursesScreenState extends State<TeacherCoursesScreen> {
                     ],
                   ),
                 ),
-
                 IconButton(
                   icon: Icon(
                     isExpanded
                         ? Icons.keyboard_arrow_up
                         : Icons.keyboard_arrow_down,
+                    color: Colors.grey,
                   ),
                   onPressed: () {
                     setState(() {
@@ -338,25 +328,21 @@ class _TeacherCoursesScreenState extends State<TeacherCoursesScreen> {
                 ),
               ],
             ),
-
             AnimatedCrossFade(
               firstChild: const SizedBox.shrink(),
               secondChild: Container(
                 margin: const EdgeInsets.only(top: 12),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
+                  color: Colors.grey.shade50,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.grey.shade300),
+                  border: Border.all(color: Colors.grey.shade200),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-
-                    SelectableText(course.joinLink ?? "No join link"),
-
+                    SelectableText(course.joinLink ?? "No join link", style: const TextStyle(color: Colors.black87)),
                     const SizedBox(height: 10),
-
                     Align(
                       alignment: Alignment.centerRight,
                       child: GestureDetector(
@@ -424,7 +410,7 @@ class _TeacherCoursesScreenState extends State<TeacherCoursesScreen> {
         margin: const EdgeInsets.only(bottom: 14),
         height: 80,
         decoration: BoxDecoration(
-          color: Colors.grey.shade300,
+          color: Colors.grey.shade200,
           borderRadius: BorderRadius.circular(20),
         ),
       ),
