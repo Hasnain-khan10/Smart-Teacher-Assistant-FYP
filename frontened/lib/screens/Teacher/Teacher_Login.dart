@@ -27,7 +27,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
   bool _googleLoading = false;
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: ['email'],
+    scopes: ['email', 'profile'],
     serverClientId: '98935133919-cejkg00o20ctilr0qrjg8po33j8l2gjj.apps.googleusercontent.com',
   );
 
@@ -66,7 +66,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
     _navigate(authProvider);
   }
 
-  /// ================= GOOGLE LOGIN =================
+  /// ================= GOOGLE LOGIN (FIXED ANTI-CRASH) =================
   Future<void> _handleGoogleSignIn(AuthProvider authProvider) async {
     try {
       setState(() => _googleLoading = true);
@@ -77,10 +77,17 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
         return _showError("Please select role first");
       }
 
+      // 🔥 ANTI-CRASH: Sirf signed user session flush karein, disconnect bilkul nahi!
+      try {
+        await _googleSignIn.signOut();
+      } catch (e) {
+        print("Silent signout handled: $e");
+      }
+
       final account = await _googleSignIn.signIn();
       if (account == null) {
         setState(() => _googleLoading = false);
-        return;
+        return; // User cancelled
       }
 
       final auth = await account.authentication;
@@ -101,7 +108,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
       _navigate(authProvider);
     } catch (e) {
       setState(() => _googleLoading = false);
-      _showError(e.toString());
+      _showError("Google Sign-In Error: ${e.toString()}");
     }
   }
 
@@ -113,8 +120,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
       return _showError("User not found");
     }
 
-    Navigator.pushReplacementNamed(
-        context, TeacherDashboardScreen.teacherRouteName);
+    Navigator.pushReplacementNamed(context, TeacherDashboardScreen.teacherRouteName);
   }
 
   void _showError(String message) {
@@ -173,11 +179,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                         ),
                         const SizedBox(height: 20),
                         Text(
-                          step == 1
-                              ? "Forgot Password"
-                              : step == 2
-                              ? "Verify OTP"
-                              : "Reset Password",
+                          step == 1 ? "Forgot Password" : step == 2 ? "Verify OTP" : "Reset Password",
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontSize: 22,
@@ -187,7 +189,6 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                         ),
                         const SizedBox(height: 24),
 
-                        /// STEP 1
                         if (step == 1)
                           TextField(
                             controller: emailController,
@@ -197,13 +198,10 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                               labelText: "Email Address",
                               labelStyle: const TextStyle(color: Colors.black54),
                               prefixIcon: const Icon(Icons.email_outlined, color: Colors.grey),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                             ),
                           ),
 
-                        /// STEP 2
                         if (step == 2)
                           TextField(
                             controller: otpController,
@@ -213,13 +211,10 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                               labelText: "Enter 6-Digit OTP",
                               labelStyle: const TextStyle(color: Colors.black54),
                               prefixIcon: const Icon(Icons.pin_outlined, color: Colors.grey),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                             ),
                           ),
 
-                        /// STEP 3
                         if (step == 3)
                           TextField(
                             controller: newPasswordController,
@@ -229,16 +224,9 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                               labelText: "New Password",
                               labelStyle: const TextStyle(color: Colors.black54),
                               prefixIcon: const Icon(Icons.lock_outline, color: Colors.grey),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                               suffixIcon: IconButton(
-                                icon: Icon(
-                                  isPasswordVisible
-                                      ? Icons.visibility
-                                      : Icons.visibility_off,
-                                  color: Colors.grey,
-                                ),
+                                icon: Icon(isPasswordVisible ? Icons.visibility : Icons.visibility_off, color: Colors.grey),
                                 onPressed: () {
                                   setModalState(() {
                                     isPasswordVisible = !isPasswordVisible;
@@ -256,21 +244,14 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primary,
                               foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               elevation: 0,
                             ),
-                            onPressed: authProvider.isLoading
-                                ? null
-                                : () async {
+                            onPressed: authProvider.isLoading ? null : () async {
                               if (step == 1) {
-                                bool success = await authProvider
-                                    .forgotPassword(emailController.text.trim());
+                                bool success = await authProvider.forgotPassword(emailController.text.trim());
                                 if (success) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text("OTP sent successfully")),
-                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("OTP sent successfully")));
                                   setModalState(() => step = 2);
                                 }
                               } else if (step == 2) {
@@ -279,9 +260,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                                   otp: otpController.text.trim(),
                                 );
                                 if (success) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text("OTP verified")),
-                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("OTP verified")));
                                   setModalState(() => step = 3);
                                 }
                               } else {
@@ -290,36 +269,20 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                                   newPassword: newPasswordController.text.trim(),
                                 );
                                 if (success) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text("Password reset successfully")),
-                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Password reset successfully")));
                                   Navigator.pop(context);
                                 }
                               }
 
                               if (!authProvider.isLoading && authProvider.error != null) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(authProvider.error!),
-                                    backgroundColor: Colors.red,
-                                  ),
+                                  SnackBar(content: Text(authProvider.error!), backgroundColor: Colors.red),
                                 );
                               }
                             },
                             child: authProvider.isLoading
-                                ? const SizedBox(
-                              height: 24,
-                              width: 24,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                            )
-                                : Text(
-                              step == 1
-                                  ? "Send OTP"
-                                  : step == 2
-                                  ? "Verify OTP"
-                                  : "Reset Password",
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                            ),
+                                ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                : Text(step == 1 ? "Send OTP" : step == 2 ? "Verify OTP" : "Reset Password", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                           ),
                         ),
                       ],
@@ -334,7 +297,6 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
     );
   }
 
-  /// ================= UI =================
   @override
   Widget build(BuildContext context) {
     return AuthScaffold(
@@ -349,35 +311,21 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
               const Text(
                 'Smart Teacher Assistant',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                ),
+                style: TextStyle(color: AppColors.textPrimary, fontSize: 24, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 6),
               const Text(
                 'Your AI Teaching Assistant',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 16,
-                ),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 16),
               ),
               const SizedBox(height: 24),
 
-              /// 🔥 EMAIL INPUT DECORATION FIXED WITH CONTRAST & BORDERS
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    )
-                  ],
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6, offset: const Offset(0, 2))],
                 ),
                 child: TextField(
                   controller: _emailController,
@@ -388,35 +336,19 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                     hintStyle: const TextStyle(color: Colors.black45),
                     prefixIcon: const Icon(Icons.person_outline, color: Colors.grey),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: AppColors.primary, width: 1.8),
-                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: AppColors.primary, width: 1.8)),
                   ),
                 ),
               ),
               const SizedBox(height: 14),
 
-              /// 🔥 PASSWORD INPUT DECORATION FIXED WITH CONTRAST & BORDERS
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    )
-                  ],
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6, offset: const Offset(0, 2))],
                 ),
                 child: TextField(
                   controller: _passwordController,
@@ -427,29 +359,13 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                     hintStyle: const TextStyle(color: Colors.black45),
                     prefixIcon: const Icon(Icons.lock_outline, color: Colors.grey),
                     suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                        color: Colors.grey,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
+                      icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
+                      onPressed: () { setState(() { _obscurePassword = !_obscurePassword; }); },
                     ),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: AppColors.primary, width: 1.8),
-                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: AppColors.primary, width: 1.8)),
                   ),
                 ),
               ),
@@ -458,51 +374,24 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                 alignment: Alignment.centerRight,
                 child: GestureDetector(
                   onTap: _showForgotPasswordSheet,
-                  child: const Text(
-                    'Forgot Password?',
-                    style: TextStyle(
-                      color: AppColors.primary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  child: const Text('Forgot Password?', style: TextStyle(color: AppColors.primary, fontSize: 15, fontWeight: FontWeight.w600)),
                 ),
               ),
               const SizedBox(height: 20),
 
-              /// LOGIN BUTTON
               GestureDetector(
                 onTap: _loginLoading ? null : () => _handleLogin(authProvider),
                 child: Container(
                   height: 55,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(16),
-                    gradient: const LinearGradient(
-                      colors: [AppColors.primary, AppColors.secondary],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withOpacity(0.25),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      )
-                    ],
+                    gradient: const LinearGradient(colors: [AppColors.primary, AppColors.secondary]),
+                    boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.25), blurRadius: 12, offset: const Offset(0, 4))],
                   ),
                   child: Center(
                     child: _loginLoading
-                        ? const CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2,
-                    )
-                        : const Text(
-                      "Login",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
+                        ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                        : const Text("Login", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
                   ),
                 ),
               ),
@@ -510,23 +399,10 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text(
-                    "Don't have an account? ",
-                    style: TextStyle(color: AppColors.primary,
-          fontSize: 18,),
-                  ),
+                  const Text("Don't have an account? ", style: TextStyle(color: AppColors.primary, fontSize: 18)),
                   GestureDetector(
-                    onTap: () {
-                      Navigator.pushNamed(context, TeacherSignUpScreen.teacherRouteName);
-                    },
-                    child: const Text(
-                      'Sign Up',
-                      style: TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                      ),
-                    ),
+                    onTap: () { Navigator.pushNamed(context, TeacherSignUpScreen.teacherRouteName); },
+                    child: const Text('Sign Up', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 18)),
                   ),
                 ],
               ),
@@ -536,21 +412,13 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                   Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      "OR",
-                      style: TextStyle(
-                        color: Colors.grey.shade500,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
+                    child: Text("OR", style: TextStyle(color: Colors.grey.shade500, fontWeight: FontWeight.w600, fontSize: 13)),
                   ),
                   Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
                 ],
               ),
               const SizedBox(height: 24),
 
-              /// GOOGLE LOGIN BUTTON
               GestureDetector(
                 onTap: _googleLoading ? null : () => _handleGoogleSignIn(authProvider),
                 child: Container(
@@ -559,40 +427,17 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: Colors.grey.shade200, width: 1.5),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      )
-                    ],
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2))],
                   ),
                   child: Center(
                     child: _googleLoading
-                        ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                      ),
-                    )
+                        ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary)))
                         : Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Image.asset(
-                          'assets/images/google.jpg',
-                          height: 24,
-                        ),
+                        Image.asset('assets/images/google.jpg', height: 24),
                         const SizedBox(width: 12),
-                        const Text(
-                          "Sign in with Google",
-                          style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                        const Text("Sign in with Google", style: TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ),

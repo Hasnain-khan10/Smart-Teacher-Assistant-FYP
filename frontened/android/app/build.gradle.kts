@@ -51,3 +51,8 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+// 🔥 ADDED: Native Android core dependency taake pehli dafa run par hardware logo skip na kare
+dependencies {
+    implementation("androidx.core:core-splashscreen:1.0.1")
+}

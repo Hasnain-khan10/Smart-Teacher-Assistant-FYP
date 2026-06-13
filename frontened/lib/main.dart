@@ -1,4 +1,3 @@
-
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:frontened/Provider/auth_provider.dart';
@@ -8,7 +7,7 @@ import 'package:frontened/Provider/quiz_provider.dart';
 import 'package:frontened/Provider/week_plan_provider.dart';
 import 'package:frontened/firebase_options.dart';
 import 'package:frontened/screens/RoleSelectionScreen.dart';
-import 'package:frontened/screens/SplashScreen.dart';
+// ❌ SplashScreen ka import yahan se delete kar diya hai
 import 'package:frontened/screens/Student/Authentication/ForgotPasswordScreen.dart';
 import 'package:frontened/screens/Student/Authentication/LoginScreen.dart';
 import 'package:frontened/screens/Student/Authentication/SignUpScreen.dart';
@@ -42,9 +41,12 @@ import 'package:frontened/screens/Teacher/Teacher_Forget_Screen.dart';
 import 'package:frontened/screens/Teacher/Teacher_Login.dart';
 import 'package:frontened/screens/Teacher/Teacher_ProfileScreen.dart';
 import 'package:frontened/screens/Teacher/Teacher_SignUp.dart';
+import 'package:frontened/services/storage_service.dart';
 import 'package:frontened/utils/Auth_Widgets/Colors.dart';
 import 'package:provider/provider.dart';
 
+// 🔥 GLOBAL VARIABLE: Dynamic entry point handle karne ke liye
+String initialAppRoute = RoleSelectionScreen.routeName;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -54,12 +56,40 @@ void main() async {
     await Firebase.initializeApp();
   }
 
-  runApp(const SmartTeacherAssistantApp());}
+  // 🔥 SESSION EXPIRY CHECK BEFORE RUNNING APP
+  bool expired = await StorageService.isSessionExpired();
+  if (expired) {
+    await StorageService.removeToken(); // Automatic background logout agar time poora ho gaya
+  }
+
+  // 🔥 PURE NATIVE DIRECT ROUTING LOGIC (No More Double Splash Screens)
+  final token = await StorageService.getToken();
+  final role = await StorageService.getRole();
+
+  if (token != null && token.isNotEmpty) {
+    if (role?.toLowerCase() == "student") {
+      initialAppRoute = MainScreen.routeName;
+    } else if (role?.toLowerCase() == "teacher") {
+      initialAppRoute = TeacherDashboardScreen.teacherRouteName;
+    }
+  }
+  // UX COLD FIX: Token expired hai par Role pehle se saved hai to direct login par bhejein
+  else if (role != null && role.isNotEmpty) {
+    if (role.toLowerCase() == "student") {
+      initialAppRoute = StudentLoginScreen.routeName;
+    } else if (role.toLowerCase() == "teacher") {
+      initialAppRoute = TeacherLoginScreen.teacherRouteName;
+    }
+  }
+  // Fresh install ke liye standard selection panel pointer
+  else {
+    initialAppRoute = RoleSelectionScreen.routeName;
+  }
+
+  runApp(const SmartTeacherAssistantApp());
+}
 
 class SmartTeacherAssistantApp extends StatelessWidget {
-  // final String? token;
-  // final String? role;
-
   const SmartTeacherAssistantApp({super.key});
 
   @override
@@ -69,20 +99,15 @@ class SmartTeacherAssistantApp extends StatelessWidget {
         ChangeNotifierProvider<AuthProvider>(
           create: (_) => AuthProvider(),
         ),
-
         ChangeNotifierProvider<CourseProvider>(
           create: (_) => CourseProvider(),
         ),
-
         ChangeNotifierProvider<WeekPlanProvider>(
           create: (_) => WeekPlanProvider(),
         ),
-
         ChangeNotifierProvider<PdfProvider>(
           create: (_) => PdfProvider(),
         ),
-
-        // ✅ ADD THIS
         ChangeNotifierProvider<QuizProvider>(
           create: (_) => QuizProvider(),
         ),
@@ -93,11 +118,11 @@ class SmartTeacherAssistantApp extends StatelessWidget {
         title: 'Smart Teacher Assistant',
         theme: AppTheme.theme,
 
-        // Pass token to Splash
-        initialRoute: SplashScreen.routeName,
+        // 🔥 Dynamic route linked directly
+        initialRoute: initialAppRoute,
 
         routes: {
-          SplashScreen.routeName: (_) => SplashScreen(),
+          // ❌ SplashScreen ki lines completely delete kar di hain
           StudentLoginScreen.routeName: (_) => const StudentLoginScreen(),
           SignUpScreen.routeName: (_) => const SignUpScreen(),
           ForgotPasswordScreen.routeName: (_) => const ForgotPasswordScreen(),
@@ -105,12 +130,8 @@ class SmartTeacherAssistantApp extends StatelessWidget {
           TeacherSignUpScreen.teacherRouteName: (_) => const TeacherSignUpScreen(),
           TeacherForgetScreen.teacherRouteName: (_) => const TeacherForgetScreen(),
           RoleSelectionScreen.routeName: (_) => const RoleSelectionScreen(),
-          // GoogleRoleSelectionScreen.routeName: (_) => const GoogleRoleSelectionScreen(),
-          TeacherDashboardScreen.teacherRouteName: (_) =>
-          const TeacherDashboardScreen(),
-          MainScreen.routeName: (_) =>
-          const MainScreen(),
-
+          TeacherDashboardScreen.teacherRouteName: (_) => const TeacherDashboardScreen(),
+          MainScreen.routeName: (_) => const MainScreen(),
 
           /// Student Dashboard Routes
           '/student-home': (context) => StudentHomeScreen(),
@@ -123,45 +144,28 @@ class SmartTeacherAssistantApp extends StatelessWidget {
           '/quiz-tips': (context) => QuizTipsScreen(),
           '/profile': (context) => StudentProfileScreen(),
 
-
-
           /// Teacher Dashboard Routes
-          /// ================= COURSES =================
           '/teacher-courses': (context) => const TeacherCoursesScreen(courseId: '', quiz: [],),
           '/teacher-createCourse': (context) => const TeacherCreateCourseScreen(quiz: [],),
           '/teacher-courseDetail': (context) => const TeacherCourseDetailScreen(courseId: '', quiz: [],),
           '/teacher-courseMain': (context) => const TeacherCourseMainScreen(courseId: '',),
-
-          /// ================= AI PLAN =================
           '/teacher-generateAIPlan': (context) => const TeacherGenerateAIPlanScreen(courseId: '',),
-          '/teacher-aiPlanLoading': (context) => const TeacherAIPlanLoadingScreen(),   // popup but route added
-
-          /// ================= STUDENTS =================
+          '/teacher-aiPlanLoading': (context) => const TeacherAIPlanLoadingScreen(),
           '/students': (context) => const StudentsScreen(courseId: '', quiz: [],),
-
-          /// ================= SCAN QUIZ =================
           '/teacher-scanQuiz': (context) => const TeacherScanQuizScreen(),
           '/quizProcessing': (context) => const TeacherQuizUploadProcessingScreen(),
-
-          /// ================= QUIZZES =================
           '/teacher-quizzes': (context) => const TeacherQuizzesScreen(courseId: '', title: '', quiz: []),
           '/teacher-createQuiz': (context) => const TeacherCreateQuizScreen(courseId: '', courseTitle: '',),
           '/teacher-questionBuilder': (context) => const TeacherManuallyQuizScreen(courseId: '', quizTitle: '',),
           '/teacher-aiQuiz': (context) => const TeacherAIQuestionQuizScreen(quizTitle: '', courseId: '',),
           '/teacher-aiQuizLoading': (context) => const TeacherAIQuizLoadingScreen(),
-
-          /// ================= RESULTS =================
           '/teacher-quizResults': (context) => const TeacherQuizResultsScreen(quizId: '',),
-
-          /// ================= PROFILE =================
           '/teacher-teacherProfile': (context) => const TeacherProfileScreen(),
         },
       ),
     );
   }
 }
-
-
 
 class AppColors {
   static const Color primary = Color(0xFF4F46E5); // Indigo
@@ -183,5 +187,4 @@ class AppColors {
     begin: Alignment.centerLeft,
     end: Alignment.centerRight,
     colors: [primary, secondary],
-  );
-}
+  );}
