@@ -1,180 +1,106 @@
-// ================================
-// quiz_model.dart
-// ================================
-
-import 'package:frontened/models/Quiz/Question.dart';
-
-import 'Question.dart';
-
 class Quiz {
   final String id;
-
-  final String course;
-  final String teacher;
-
   final String title;
   final String description;
-
-  // mcq | question | mixed
   final String type;
-
-  // ================= MCQ =================
-  final List<Question> questions;
-
-  // ================= SUBJECTIVE =================
-  final List<Question> shortQuestions;
-  final List<Question> longQuestions;
-
-  // ================= EXAM META =================
-  final Map<String, dynamic>? examMeta;
-
   final int totalMarks;
-  final int marksPerQuestion;
-
-  // ================= AI SCAN =================
+  final List<McqQuestion> questions;
+  final List<SubjectiveQuestion> shortQuestions;
+  final List<SubjectiveQuestion> longQuestions;
   final bool isAIScanned;
-  final bool evaluatedByAI;
 
-  // ================= ATTEMPT DATA =================
-  final bool isCompleted;
-
-  final int? score;
-  final int? total;
-
-  final List<String> selectedAnswers;
-
-  final DateTime? createdAt;
-  final DateTime? updatedAt;
+  // 🔥 NEW FIELDS TO FIX YOUR ERRORS
+  final String? course;       // Required for course filtering
+  final bool isCompleted;     // Required for QuizzesScreen
+  final num? score;           // Required for results
+  final List<dynamic>? selectedAnswers; // Required for results
+  final bool? evaluatedByAI;  // Required for UI logic
 
   Quiz({
     required this.id,
-    required this.course,
-    required this.teacher,
     required this.title,
     required this.description,
     required this.type,
+    required this.totalMarks,
     required this.questions,
     required this.shortQuestions,
     required this.longQuestions,
-    required this.examMeta,
-    required this.totalMarks,
-    required this.marksPerQuestion,
     required this.isAIScanned,
-    required this.evaluatedByAI,
-    required this.isCompleted,
+    this.course,
+    this.isCompleted = false,
     this.score,
-    this.total,
-    required this.selectedAnswers,
-    this.createdAt,
-    this.updatedAt,
+    this.selectedAnswers,
+    this.evaluatedByAI,
   });
 
   factory Quiz.fromJson(Map<String, dynamic> json) {
     return Quiz(
       id: json['_id'] ?? '',
-
-      // ================= COURSE =================
-      course: json['course'] is String
-          ? json['course']
-          : json['course']?['_id'] ?? '',
-
-      // ================= TEACHER =================
-      teacher: json['teacher'] is String
-          ? json['teacher']
-          : json['teacher']?['_id'] ?? '',
-
-      title: json['title'] ?? '',
-
+      title: json['title'] ?? 'Untitled Quiz',
       description: json['description'] ?? '',
-
       type: json['type'] ?? 'mcq',
-
-      // ================= MCQ QUESTIONS =================
-      questions: (json['questions'] as List?)
-          ?.map((q) => Question.fromJson(q))
-          .toList() ??
-          [],
-
-      // ================= SHORT QUESTIONS =================
-      shortQuestions: (json['shortQuestions'] as List?)
-          ?.map((q) => Question.fromJson(q))
-          .toList() ??
-          [],
-
-      // ================= LONG QUESTIONS =================
-      longQuestions: (json['longQuestions'] as List?)
-          ?.map((q) => Question.fromJson(q))
-          .toList() ??
-          [],
-
-      // ================= EXAM META =================
-      examMeta: json['examMeta'] != null
-          ? Map<String, dynamic>.from(json['examMeta'])
-          : null,
-
       totalMarks: json['totalMarks'] ?? 0,
+      isAIScanned: json['isAIScanned'] ?? false,
 
-      marksPerQuestion: json['marksPerQuestion'] ?? 1,
-
-      // ================= AI SCAN =================
-      isAIScanned:
-      json['isAIScanned'] ?? false,
-
-      evaluatedByAI:
-      json['evaluatedByAI'] ?? false,
-
-      // ================= ATTEMPT =================
+      // Fixed Fields for existing screens
+      course: json['course'] is Map ? json['course']['_id'] : json['course'], // Handle populate vs ID
       isCompleted: json['isCompleted'] ?? false,
-
       score: json['score'],
+      selectedAnswers: json['answers'] ?? json['selectedAnswers'],
+      evaluatedByAI: json['evaluatedByAI'] ?? false,
 
-      total: json['total'],
-
-      // ================= ANSWERS =================
-      selectedAnswers: json['answers'] != null
-          ? List<String>.from(
-        (json['answers'] as List)
-            .map((a) => a['selectedAnswer'] ?? ''),
-      )
-          : [],
-
-      // ================= DATES =================
-      createdAt: json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt'])
-          : null,
-
-      updatedAt: json['updatedAt'] != null
-          ? DateTime.tryParse(json['updatedAt'])
-          : null,
+      questions: (json['questions'] as List?)?.map((q) => McqQuestion.fromJson(q)).toList() ?? [],
+      shortQuestions: (json['shortQuestions'] as List?)?.map((q) => SubjectiveQuestion.fromJson(q)).toList() ?? [],
+      longQuestions: (json['longQuestions'] as List?)?.map((q) => SubjectiveQuestion.fromJson(q)).toList() ?? [],
     );
   }
-  Quiz copyWith({
-    bool? isCompleted,
-    int? score,
-    int? total,
-    List<String>? selectedAnswers,
-  }) {
-    return Quiz(
-      id: id,
-      course: course,
-      teacher: teacher,
-      title: title,
-      description: description,
-      type: type,
-      questions: questions,
-      shortQuestions: shortQuestions,
-      longQuestions: longQuestions,
-      examMeta: examMeta,
-      totalMarks: totalMarks,
-      marksPerQuestion: marksPerQuestion,
-      isAIScanned: isAIScanned,
-      evaluatedByAI: evaluatedByAI,
-      isCompleted: isCompleted ?? this.isCompleted,
-      score: score ?? this.score,
-      total: total ?? this.total,
-      selectedAnswers: selectedAnswers ?? this.selectedAnswers,
-      createdAt: createdAt,
-      updatedAt: updatedAt,
+}
+
+class McqQuestion {
+  final String question;
+  final Map<String, String> options;
+  final String correctAnswer;
+  final String explanation;
+  final int marks;
+
+  McqQuestion({
+    required this.question,
+    required this.options,
+    required this.correctAnswer,
+    required this.explanation,
+    required this.marks,
+  });
+
+  factory McqQuestion.fromJson(Map<String, dynamic> json) {
+    return McqQuestion(
+      question: json['question'] ?? '',
+      options: Map<String, String>.from(json['options'] ?? {}),
+      correctAnswer: json['correctAnswer'] ?? '',
+      explanation: json['explanation'] ?? '',
+      marks: json['marks'] ?? 1,
+    );
+  }
+}
+
+class SubjectiveQuestion {
+  final String question;
+  final int marks;
+  final String idealAnswer;
+  final String rubric;
+
+  SubjectiveQuestion({
+    required this.question,
+    required this.marks,
+    required this.idealAnswer,
+    required this.rubric,
+  });
+
+  factory SubjectiveQuestion.fromJson(Map<String, dynamic> json) {
+    return SubjectiveQuestion(
+      question: json['question'] ?? '',
+      marks: json['marks'] ?? 0,
+      idealAnswer: json['idealAnswer'] ?? '',
+      rubric: json['rubric'] ?? '',
     );
   }
 }

@@ -1,324 +1,213 @@
 import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:frontened/Provider/week_plan_provider.dart';
-import 'package:frontened/main.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:frontened/Provider/course_provider.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 
+class TeacherAIWeekPlanScreen extends StatefulWidget {
+  final String courseId;
 
-class TeacherGenerateAIPlanScreen extends StatefulWidget {
-  static const String generateAiPlan = '/generate-ai-plan';
-
-  final String? courseId;
-
-  const TeacherGenerateAIPlanScreen({
-    super.key,
-    required this.courseId,
-  });
+  const TeacherAIWeekPlanScreen({super.key, required this.courseId});
 
   @override
-  State<TeacherGenerateAIPlanScreen> createState() =>
-      _TeacherGenerateAIPlanScreenState();
+  State<TeacherAIWeekPlanScreen> createState() => _TeacherAIWeekPlanScreenState();
 }
 
-class _TeacherGenerateAIPlanScreenState
-    extends State<TeacherGenerateAIPlanScreen> {
-  final TextEditingController _promptController = TextEditingController();
-  File? _selectedFile;
-  final ImagePicker _imagePicker = ImagePicker();
+class _TeacherAIWeekPlanScreenState extends State<TeacherAIWeekPlanScreen> {
+  File? uploadedBook;
+  final topicController = TextEditingController();
+  final promptController = TextEditingController();
+
+  String selectedFormat = "PDF"; // Options: PDF, DOCX, PPT
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() => context.read<CourseProvider>().fetchCourses());
+  }
 
   @override
   void dispose() {
-    _promptController.dispose();
+    topicController.dispose();
+    promptController.dispose();
     super.dispose();
   }
 
-  // ================= FILE PICK =================
-  Future<void> _pickFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['jpg', 'png', 'jpeg', 'pdf'],
-    );
-
-    if (result != null && result.files.single.path != null) {
-      setState(() {
-        _selectedFile = File(result.files.single.path!);
-      });
-    }
-  }
-
-  // ================= CAMERA =================
-  Future<void> _takePhoto() async {
+  String _getCourseTitle(BuildContext context) {
+    final courses = context.read<CourseProvider>().courses;
     try {
-      final XFile? image =
-      await _imagePicker.pickImage(source: ImageSource.camera);
-
-      if (image == null) return;
-
-      setState(() {
-        _selectedFile = File(image.path);
-      });
+      return courses.firstWhere((c) => c.id == widget.courseId).title;
     } catch (e) {
-      debugPrint("Camera error: $e");
+      return "Unknown Subject";
     }
   }
 
-  // ================= GENERATE =================
-  Future<void> _generatePlan(WeekPlanProvider provider) async {
-    if (widget.courseId == null) return;
+  Future<void> _pickBook() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'docx', 'txt', 'ppt', 'pptx']
+    );
+    if (result != null && result.files.single.path != null) {
+      setState(() => uploadedBook = File(result.files.single.path!));
+    }
+  }
 
+  Future<void> _handleGeneration(String courseTitle) async {
+    final provider = context.read<WeekPlanProvider>();
     bool success = false;
 
-    if (_selectedFile != null) {
+    if (uploadedBook != null) {
       success = await provider.generateAIPlanFromBook(
-        widget.courseId!,
-        _selectedFile!,
+          widget.courseId,
+          courseTitle: courseTitle,
+          bookFile: uploadedBook!,
+          format: selectedFormat // 🔥 Passes Format to Provider
       );
     } else {
+      if (topicController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please enter a Topic Name or Upload a Book"), backgroundColor: Colors.red));
+        return;
+      }
       success = await provider.generateAIPlan(
-        widget.courseId!,
-        prompt: _promptController.text.trim(),
+          widget.courseId,
+          courseTitle: courseTitle,
+          prompt: "Topic: ${topicController.text.trim()}, Additional Prompt: ${promptController.text.trim()}",
+          format: selectedFormat // 🔥 Passes Format to Provider
       );
     }
 
-    if (success && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("18 Weekly AI Plan Generated Successfully"),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      );
+    if (success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Weekly Plan Generated Successfully! 🎉"), backgroundColor: Colors.green));
       Navigator.pop(context);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(provider.error ?? "Generation Failed"), backgroundColor: Colors.red));
     }
   }
 
-  // ================= UI =================
   @override
   Widget build(BuildContext context) {
-    final provider = Provider.of<WeekPlanProvider>(context);
-    final isLoading =
-        provider.isGeneratingAI || provider.isGeneratingFromBook;
+    final provider = context.watch<WeekPlanProvider>();
+    final String courseTitle = _getCourseTitle(context);
+
+    bool isBookMode = uploadedBook != null;
+    String buttonText = isBookMode ? "Generate from Book" : "Generate from Topic";
+    Color buttonColor = isBookMode ? Colors.green.shade600 : const Color(0xFF4F46E5);
+    IconData buttonIcon = isBookMode ? Icons.auto_stories : Icons.auto_awesome;
 
     return Scaffold(
-      resizeToAvoidBottomInset: true,
-      backgroundColor: const Color(0xFFF7F8FC),
-
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-
-              // ================= HEADER =================
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 20, vertical: 25),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [AppColors.primary, AppColors.secondary],
-                  ),
-                  borderRadius:
-                  BorderRadius.vertical(bottom: Radius.circular(30)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-
-                    Row(
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        title: const Text("18-Week Plan Studio", style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: const Color(0xFF4F46E5),
+        elevation: 0,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(color: const Color(0xFF4F46E5).withOpacity(0.1), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFF4F46E5).withOpacity(0.3))),
+              child: Row(
+                children: [
+                  const Icon(Icons.school, color: Color(0xFF4F46E5)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        GestureDetector(
-                          onTap: () => Navigator.pop(context),
-                          child: const Icon(Icons.arrow_back_ios,
-                              color: Colors.white),
-                        ),
-                        const SizedBox(width: 10),
-                        const Text(
-                          "AI Plan Generator",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        const Text("Target Subject Domain", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                        Text(courseTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF4F46E5))),
                       ],
                     ),
-
-                    const SizedBox(height: 15),
-
-                    const Text(
-                      "Smart Curriculum Designer",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-
-                    const SizedBox(height: 5),
-
-                    const Text(
-                      "Upload Book OR Enter Prompt → Generate 18-Week Plan",
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                  ],
-                ),
+                  ),
+                  const Icon(Icons.lock_outline, color: Colors.grey, size: 20),
+                ],
               ),
+            ),
+            const SizedBox(height: 24),
 
-              const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))]),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("Syllabus Configuration", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: topicController,
+                    decoration: InputDecoration(labelText: "Main Topic Name", hintText: "e.g., Software Engineering Basics", border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), filled: true, fillColor: Colors.grey.shade50),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: promptController,
+                    maxLines: 2,
+                    decoration: InputDecoration(labelText: "Custom Instructions (Optional)", hintText: "e.g., Focus on modern cloud architecture...", border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), filled: true, fillColor: Colors.grey.shade50),
+                  ),
+                  const SizedBox(height: 20),
 
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 18),
-                child: Column(
-                  children: [
-
-                    // ================= PRO TIPS =================
-                    _card(
-                      child: const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("💡 Pro Tips",
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 15)),
-                          SizedBox(height: 8),
-                          Text("• Upload Image or PDF for best AI accuracy"),
-                          Text("• Use camera for quick book capture"),
-                          Text("• Add specific prompt for better results"),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 15),
-
-                    // ================= FILE CARD =================
-                    _card(
-                      child: Row(
-                        children: [
-                          const Icon(Icons.insert_drive_file,
-                              color: AppColors.primary),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              _selectedFile != null
-                                  ? _selectedFile!.path.split('/').last
-                                  : "No file selected",
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (_selectedFile != null)
-                            GestureDetector(
-                              onTap: () => setState(() {
-                                _selectedFile = null;
-                              }),
-                              child: const Icon(Icons.close,
-                                  color: Colors.red),
-                            )
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 15),
-
-                    // ================= INPUT =================
-                    _card(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: TextField(
-                        controller: _promptController,
-                        maxLines: 4,
-                        decoration: InputDecoration(
-                          prefixIcon: IconButton(
-                            icon: const Icon(Icons.attach_file),
-                            onPressed: _pickFile,
-                          ),
-                          suffixIcon: IconButton(
-                            icon: const Icon(Icons.camera_alt),
-                            onPressed: _takePhoto,
-                          ),
-                          hintText:
-                          "Enter prompt OR attach file / capture image...",
-                          hintStyle: TextStyle(
-                            fontSize: 16,
-                          ),
-                          border: InputBorder.none,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 25),
-
-                    if (provider.error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Text(provider.error!,
-                            style: const TextStyle(color: Colors.red)),
-                      ),
-
-                    // ================= BUTTON =================
-                    SizedBox(
+                  InkWell(
+                    onTap: _pickBook,
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
                       width: double.infinity,
-                      child: GestureDetector(
-                        onTap: isLoading
-                            ? null
-                            : () => _generatePlan(provider),
-                        child: Container(
-                          height: 55,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [
-                                AppColors.primary,
-                                AppColors.secondary
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Center(
-                            child: isLoading
-                                ? const CircularProgressIndicator(
-                                color: Colors.white)
-                                : Text(
-                              _selectedFile != null
-                                  ? "Generate from Book"
-                                  : "Generate from Prompt",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
+                      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                      decoration: BoxDecoration(color: isBookMode ? Colors.green.shade50 : Colors.blue.shade50, border: Border.all(color: isBookMode ? Colors.green : Colors.blue.shade200, width: 2), borderRadius: BorderRadius.circular(10)),
+                      child: Column(
+                        children: [
+                          Icon(isBookMode ? Icons.check_circle : Icons.cloud_upload, color: isBookMode ? Colors.green : Colors.blue, size: 40),
+                          const SizedBox(height: 8),
+                          Text(isBookMode ? "Book Attached Successfully" : "Upload Reference Book (PDF/DOCX/PPT)", style: TextStyle(fontWeight: FontWeight.bold, color: isBookMode ? Colors.green.shade700 : Colors.blue.shade700)),
+                          if (isBookMode) Text(uploadedBook!.path.split('/').last, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        ],
                       ),
                     ),
-
-                    const SizedBox(height: 20),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 24),
+
+            const Text("Output Format Extraction:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.grey)),
+            const SizedBox(height: 10),
+            Row(
+              children: ["PDF", "DOCX", "PPT"].map((format) {
+                bool isSelected = selectedFormat == format;
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => selectedFormat = format),
+                    child: Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(color: isSelected ? const Color(0xFF4F46E5) : Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: isSelected ? const Color(0xFF4F46E5) : Colors.grey.shade300)),
+                      child: Center(
+                        child: Text(format, style: TextStyle(fontWeight: FontWeight.bold, color: isSelected ? Colors.white : Colors.black87)),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 32),
+
+            SizedBox(
+              width: double.infinity,
+              height: 55,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: buttonColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 2),
+                icon: provider.isGeneratingAI || provider.isGeneratingFromBook ? const SizedBox.shrink() : Icon(buttonIcon, color: Colors.white),
+                label: provider.isGeneratingAI || provider.isGeneratingFromBook
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : Text(buttonText, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                onPressed: provider.isGeneratingAI || provider.isGeneratingFromBook ? null : () => _handleGeneration(courseTitle),
+              ),
+            ),
+          ],
         ),
       ),
-    );
-  }
-
-  // ================= REUSABLE CARD =================
-  Widget _card({required Widget child, EdgeInsets? padding}) {
-    return Container(
-      width: double.infinity,
-      padding: padding ?? const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: child,
     );
   }
 }

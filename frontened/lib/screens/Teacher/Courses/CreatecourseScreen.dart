@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:frontened/Provider/course_provider.dart';
 import 'package:frontened/models/Quiz/quiz_model.dart';
 import 'package:frontened/models/course_model.dart';
-import 'package:frontened/screens/Teacher/Courses/CourseDetailScreen.dart';
+import 'package:frontened/screens/Teacher/Courses/TeacherUnifiedCourseScreen.dart'; // Level 2 Link
 import 'package:provider/provider.dart';
 
 class TeacherCreateCourseScreen extends StatefulWidget {
@@ -13,41 +13,48 @@ class TeacherCreateCourseScreen extends StatefulWidget {
   const TeacherCreateCourseScreen({super.key, required this.quiz});
 
   @override
-  State<TeacherCreateCourseScreen> createState() =>
-      _TeacherCreateCourseScreenState();
+  State<TeacherCreateCourseScreen> createState() => _TeacherCreateCourseScreenState();
 }
 
-class _TeacherCreateCourseScreenState
-    extends State<TeacherCreateCourseScreen> {
+class _TeacherCreateCourseScreenState extends State<TeacherCreateCourseScreen> {
   final TextEditingController nameController = TextEditingController();
   final TextEditingController codeController = TextEditingController();
   final TextEditingController creditController = TextEditingController();
-  final TextEditingController instructorController = TextEditingController();
 
   String? selectedSemester;
-  String? joinLink;
+  final List<String> semesters = List.generate(8, (i) => "Semester ${i + 1}");
 
-  final List<String> semesters =
-  List.generate(8, (i) => "Semester ${i + 1}");
+  @override
+  void dispose() {
+    nameController.dispose();
+    codeController.dispose();
+    creditController.dispose();
+    super.dispose();
+  }
 
-  Future<void> createCourse() async {
-    final provider = Provider.of<CourseProvider>(context, listen: false);
+  void _showSnackBar(String msg, {bool isError = true}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
-    if (nameController.text.isEmpty ||
-        codeController.text.isEmpty ||
-        creditController.text.isEmpty ||
-        selectedSemester == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please fill all fields")),
-      );
+  Future<void> _createCourse() async {
+    final provider = context.read<CourseProvider>();
+
+    if (nameController.text.isEmpty || codeController.text.isEmpty || creditController.text.isEmpty || selectedSemester == null) {
+      _showSnackBar("Please fill all the required fields.");
       return;
     }
 
     final course = CourseModel(
       id: "",
-      title: nameController.text,
-      courseCode: codeController.text,
-      creditHours: int.parse(creditController.text),
+      title: nameController.text.trim(),
+      courseCode: codeController.text.trim(),
+      creditHours: int.tryParse(creditController.text.trim()) ?? 3,
       syllabus: "",
       books: [],
       progress: 0,
@@ -56,287 +63,160 @@ class _TeacherCreateCourseScreenState
 
     final createdCourse = await provider.createCourse(course);
 
+    if (!mounted) return;
+
     if (createdCourse != null) {
-      setState(() {
-        joinLink = provider.joinLink;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text("Course Created Successfully"),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      );
-
-      nameController.clear();
-      codeController.clear();
-      creditController.clear();
-      instructorController.clear();
-      selectedSemester = null;
-
-      Future.delayed(const Duration(milliseconds: 300), () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => TeacherCourseDetailScreen(
-              courseId: createdCourse.id,
-              quiz: widget.quiz,
-            ),
-          ),
-        );
-      });
+      final String joinLink = provider.joinLink ?? "No link generated";
+      _showSuccessDialog(createdCourse.id, createdCourse.title, joinLink);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(provider.error ?? "Failed")),
-      );
+      _showSnackBar(provider.error ?? "Failed to create workspace.");
     }
   }
 
-  void copyLink() {
-    if (joinLink != null) {
-      Clipboard.setData(ClipboardData(text: joinLink!));
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Copied")),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final provider = Provider.of<CourseProvider>(context);
-
-    return Scaffold(
-      backgroundColor: Colors.white, /// 🔥 PURE WHITE ENFORCED
-      resizeToAvoidBottomInset: true,
-      body: Container(
-        color: Colors.white, /// 🔥 PURPLE GRADIENT COMPLETELY REMOVED
-        child: SafeArea(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-
-                  /// HEADER
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child:
-                        const Icon(Icons.arrow_back_ios, size: 20, color: Colors.black87),
-                      ),
-                      const SizedBox(width: 10),
-                      const Expanded(
-                        child: Text(
-                          "Create New Course",
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black87,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 20),
-                    ],
-                  ),
-
-                  const SizedBox(height: 20),
-                  const Text("Enter course details", style: TextStyle(color: Colors.black54)),
-                  const SizedBox(height: 18),
-
-                  /// FORM WITH CLEAN ACCENTS
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: Colors.grey.shade200),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.02),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        )
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        _inputField("Course Name", nameController),
-                        const SizedBox(height: 14),
-                        _inputField("Course Code", codeController),
-                        const SizedBox(height: 14),
-
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.shade300, width: 1.5),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: DropdownButtonHideUnderline(
-                            child: DropdownButton<String>(
-                              value: selectedSemester,
-                              dropdownColor: Colors.white,
-                              style: const TextStyle(color: Colors.black87, fontSize: 16),
-                              hint: const Text("Select Semester", style: TextStyle(color: Colors.black45)),
-                              isExpanded: true,
-                              items: semesters
-                                  .map((e) => DropdownMenuItem(
-                                value: e,
-                                child: Text(e),
-                              ))
-                                  .toList(),
-                              onChanged: (val) {
-                                setState(() {
-                                  selectedSemester = val;
-                                });
-                              },
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 14),
-                        _inputField("Credit Hours", creditController),
-                        const SizedBox(height: 14),
-                        _inputField("Instructor Name", instructorController),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  GestureDetector(
-                    onTap: provider.isCreating ? null : createCourse,
-                    child: Container(
-                      height: 58,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Colors.deepPurple, Colors.purple],
-                        ),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Center(
-                        child: provider.isCreating
-                            ? const CircularProgressIndicator(
-                          color: Colors.white,
-                        )
-                            : const Text(
-                          "Create Course",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  /// JOIN LINK CONTAINER
-                  if (joinLink != null)
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.green),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text("Join Link:",
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold, color: Colors.black87)),
-                          const SizedBox(height: 8),
-                          SelectableText(joinLink!, style: const TextStyle(color: Colors.black87)),
-                          const SizedBox(height: 10),
-                          ElevatedButton(
-                            onPressed: copyLink,
-                            child: const Text("Copy"),
-                          )
-                        ],
-                      ),
-                    ),
-
-                  const SizedBox(height: 20),
-
-                  /// COURSE DETAIL BUTTON
-                  if (provider.selectedCourse != null)
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                TeacherCourseDetailScreen(
-                                  courseId:
-                                  provider.selectedCourse!.id,
-                                  quiz: widget.quiz,
-                                ),
-                          ),
-                        );
-                      },
-                      child: Container(
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                              color: Colors.deepPurple, width: 1.5),
-                        ),
-                        child: const Center(
-                          child: Row(
-                            mainAxisAlignment:
-                            MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.auto_stories,
-                                  color: Colors.deepPurple),
-                              SizedBox(width: 8),
-                              Text(
-                                "Go to Course Detail (18 Week Plan)",
-                                style: TextStyle(
-                                  color: Colors.deepPurple,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
+  // 🔥 PREMIUM SUCCESS DIALOG
+  void _showSuccessDialog(String courseId, String courseTitle, String joinLink) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircleAvatar(
+                radius: 30,
+                backgroundColor: Colors.green,
+                child: Icon(Icons.check, color: Colors.white, size: 35),
               ),
-            ),
+              const SizedBox(height: 16),
+              const Text("Workspace Created!", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              const Text("Share this link with your students so they can join.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 20),
+
+              // LINK CONTAINER
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(12)),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(joinLink, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF4F46E5)))),
+                    IconButton(
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: joinLink));
+                        _showSnackBar("Link copied to clipboard!", isError: false);
+                      },
+                      icon: const Icon(Icons.copy, color: Color(0xFF4F46E5)),
+                    )
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    // Navigate to Level 2 (Unified Course Screen)
+                    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => TeacherUnifiedCourseScreen(courseId: courseId, courseTitle: courseTitle)));
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4F46E5),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text("Enter Workspace", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                ),
+              )
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _inputField(String hint, TextEditingController controller) {
-    return Container(
-      height: 54,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300, width: 1.5),
-        borderRadius: BorderRadius.circular(16),
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<CourseProvider>();
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: const Color(0xFF4F46E5),
+        title: const Text("Create Workspace", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
-      child: TextField(
-        controller: controller,
-        style: const TextStyle(color: Colors.black87),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: const TextStyle(color: Colors.black45),
-          border: InputBorder.none,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text("Workspace Details", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
+              const SizedBox(height: 6),
+              const Text("Fill in the details to setup your new virtual classroom.", style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 24),
+
+              _inputField("Course Title", nameController, Icons.menu_book),
+              const SizedBox(height: 16),
+              _inputField("Course Code (e.g. CS-101)", codeController, Icons.code),
+              const SizedBox(height: 16),
+
+              // SEMESTER DROPDOWN
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade300)),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: selectedSemester,
+                    isExpanded: true,
+                    hint: const Text("Select Semester"),
+                    items: semesters.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                    onChanged: (val) => setState(() => selectedSemester = val),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+              _inputField("Credit Hours", creditController, Icons.timer, isNumber: true),
+              const SizedBox(height: 40),
+
+              // SUBMIT BUTTON
+              SizedBox(
+                width: double.infinity, height: 60,
+                child: ElevatedButton(
+                  onPressed: provider.isCreating ? null : _createCourse,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4F46E5),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: 5,
+                  ),
+                  child: provider.isCreating
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text("Create Workspace", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                ),
+              )
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _inputField(String hint, TextEditingController controller, IconData icon, {bool isNumber = false}) {
+    return TextField(
+      controller: controller,
+      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+      decoration: InputDecoration(
+        hintText: hint,
+        prefixIcon: Icon(icon, color: Colors.grey),
+        filled: true,
+        fillColor: Colors.grey.shade50,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.grey.shade300)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.grey.shade300)),
       ),
     );
   }

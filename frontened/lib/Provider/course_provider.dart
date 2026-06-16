@@ -1,19 +1,13 @@
 import 'package:flutter/material.dart';
-
-import '../models/course_model.dart';
-import '../services/course_service.dart';
+import 'package:frontened/models/course_model.dart';
+import 'package:frontened/services/course_service.dart';
 
 class CourseProvider with ChangeNotifier {
-  // ===============================
-  // STATE
-  // ===============================
-
   List<CourseModel> _courses = [];
   CourseModel? _selectedCourse;
-
   List<dynamic> _courseStudents = [];
-  bool _isStudentsLoading = false;
 
+  bool _isStudentsLoading = false;
   bool _isLoading = false;
   bool _isCreating = false;
   bool _isJoining = false;
@@ -24,29 +18,19 @@ class CourseProvider with ChangeNotifier {
   String? _error;
   String? _joinLink;
 
-  // ===============================
-  // GETTERS
-  // ===============================
-
   List<CourseModel> get courses => _courses;
   CourseModel? get selectedCourse => _selectedCourse;
-
   List<dynamic> get courseStudents => _courseStudents;
   bool get isStudentsLoading => _isStudentsLoading;
-
   bool get isLoading => _isLoading;
   bool get isCreating => _isCreating;
   bool get isJoining => _isJoining;
   bool get isPreviewLoading => _isPreviewLoading;
   bool get isUpdating => _isUpdating;
   bool get isDeleting => _isDeleting;
-
   String? get error => _error;
   String? get joinLink => _joinLink;
 
-  // ===============================
-  // UTIL
-  // ===============================
   void _setLoading(bool value) {
     _isLoading = value;
     notifyListeners();
@@ -57,59 +41,44 @@ class CourseProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // ===============================
-  // 1. FETCH COURSES
-  // ===============================
   Future<void> fetchCourses() async {
+    _setLoading(true);
+    _error = null;
     try {
-      _setLoading(true);
-      _error = null;
-
       _courses = await CourseService.getCourses();
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll("Exception:", "").trim();
     } finally {
       _setLoading(false);
     }
   }
 
-  // ===============================
-  // 2. FETCH SINGLE COURSE
-  // ===============================
   Future<void> fetchCourseById(String id) async {
+    _setLoading(true);
+    _error = null;
     try {
-      _setLoading(true);
-      _error = null;
-
       _selectedCourse = await CourseService.getCourseById(id);
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll("Exception:", "").trim();
     } finally {
       _setLoading(false);
     }
   }
 
-  // ===============================
-  // 3. CREATE COURSE
-  // ===============================
   Future<CourseModel?> createCourse(CourseModel course) async {
+    _isCreating = true;
+    _error = null;
+    _joinLink = null;
+    notifyListeners();
     try {
-      _isCreating = true;
-      _error = null;
-      _joinLink = null;
-      notifyListeners();
-
       final result = await CourseService.createCourse(course);
-
       final newCourse = result["course"] as CourseModel;
       _joinLink = result["joinLink"];
-
       _courses.add(newCourse);
       _selectedCourse = newCourse;
-
       return newCourse;
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll("Exception:", "").trim();
       return null;
     } finally {
       _isCreating = false;
@@ -117,22 +86,16 @@ class CourseProvider with ChangeNotifier {
     }
   }
 
-  // ===============================
-  // 4. JOIN COURSE
-  // ===============================
   Future<bool> joinCourse(String joinCode) async {
+    _isJoining = true;
+    _error = null;
+    notifyListeners();
     try {
-      _isJoining = true;
-      _error = null;
-      notifyListeners();
-
       await CourseService.joinCourse(joinCode);
-
       await fetchCourses();
-
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll("Exception:", "").trim();
       return false;
     } finally {
       _isJoining = false;
@@ -140,24 +103,12 @@ class CourseProvider with ChangeNotifier {
     }
   }
 
-
-// ===============================
-// GET COURSE STUDENTS
-// ===============================
   Future<void> fetchCourseStudents(String courseId) async {
+    _isStudentsLoading = true;
+    notifyListeners();
     try {
-      _isStudentsLoading = true;
-      notifyListeners();
-
-      final result =
-      await CourseService.getCourseStudents(courseId);
-
-      print("STUDENTS API RESULT => $result");
-
-      _courseStudents = result;
-
+      _courseStudents = await CourseService.getCourseStudents(courseId);
     } catch (e) {
-      print("ERROR => $e");
       _courseStudents = [];
     } finally {
       _isStudentsLoading = false;
@@ -165,19 +116,14 @@ class CourseProvider with ChangeNotifier {
     }
   }
 
-
-  // ===============================
-  // 5. PREVIEW COURSE
-  // ===============================
   Future<void> previewCourse(String code) async {
+    _isPreviewLoading = true;
+    _error = null;
+    notifyListeners();
     try {
-      _isPreviewLoading = true;
-      _error = null;
-      notifyListeners();
-
       _selectedCourse = await CourseService.previewCourse(code);
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll("Exception:", "").trim();
       _selectedCourse = null;
     } finally {
       _isPreviewLoading = false;
@@ -185,30 +131,18 @@ class CourseProvider with ChangeNotifier {
     }
   }
 
-  // ===============================
-  // 7. UPDATE COURSE
-  // ===============================
   Future<bool> updateCourse(String id, CourseModel course) async {
+    _isUpdating = true;
+    _error = null;
+    notifyListeners();
     try {
-      _isUpdating = true;
-      _error = null;
-      notifyListeners();
-
-      final updatedCourse =
-      await CourseService.updateCourse(id, course);
-
+      final updatedCourse = await CourseService.updateCourse(id, course);
       final index = _courses.indexWhere((c) => c.id == id);
-      if (index != -1) {
-        _courses[index] = updatedCourse;
-      }
-
-      if (_selectedCourse?.id == id) {
-        _selectedCourse = updatedCourse;
-      }
-
+      if (index != -1) _courses[index] = updatedCourse;
+      if (_selectedCourse?.id == id) _selectedCourse = updatedCourse;
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll("Exception:", "").trim();
       return false;
     } finally {
       _isUpdating = false;
@@ -216,26 +150,17 @@ class CourseProvider with ChangeNotifier {
     }
   }
 
-  // ===============================
-  // 8. DELETE COURSE
-  // ===============================
   Future<bool> deleteCourse(String id) async {
+    _isDeleting = true;
+    _error = null;
+    notifyListeners();
     try {
-      _isDeleting = true;
-      _error = null;
-      notifyListeners();
-
       await CourseService.deleteCourse(id);
-
       _courses.removeWhere((c) => c.id == id);
-
-      if (_selectedCourse?.id == id) {
-        _selectedCourse = null;
-      }
-
+      if (_selectedCourse?.id == id) _selectedCourse = null;
       return true;
     } catch (e) {
-      _error = e.toString();
+      _error = e.toString().replaceAll("Exception:", "").trim();
       return false;
     } finally {
       _isDeleting = false;

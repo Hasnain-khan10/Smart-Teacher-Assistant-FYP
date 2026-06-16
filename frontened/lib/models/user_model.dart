@@ -1,21 +1,21 @@
 class UserModel {
   final String id;
   final String name;
-  final String? profileImage;
   final String email;
   final String role;
+  final String? profileImage;
 
-  // 🔹 Common
+  // 🔹 Common Fields
   final String? fatherName;
   final String? cnic;
   final String? department;
 
-  // 👨‍🎓 Student
+  // 👨‍🎓 Student Specific
   final String? rollNumber;
   final String? semester;
   final String? section;
 
-  // 👨‍🏫 Teacher
+  // 👨‍🏫 Teacher Specific
   final String? qualification;
   final String? experience;
   final String? speciality;
@@ -23,18 +23,15 @@ class UserModel {
   UserModel({
     required this.id,
     required this.name,
-    this.profileImage,
     required this.email,
     required this.role,
-
+    this.profileImage,
     this.fatherName,
     this.cnic,
     this.department,
-
     this.rollNumber,
     this.semester,
     this.section,
-
     this.qualification,
     this.experience,
     this.speciality,
@@ -42,24 +39,39 @@ class UserModel {
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
-      id: json['_id'] ?? "",
+      id: json['_id'] ?? json['id'] ?? "",
       name: json['name'] ?? "",
-      profileImage:
-      json["profileImage"] ?? "",
       email: json['email'] ?? "",
-      role: json['role'] ?? '',
-
+      role: json['role'] ?? "student",
+      profileImage: json["profileImage"],
       fatherName: json['fatherName'],
       cnic: json['cnic'],
       department: json['department'],
-
       rollNumber: json['rollNumber'],
       semester: json['semester'],
       section: json['section'],
-
       qualification: json['qualification'],
-      experience: json['experience'],
+      experience: json['experience']?.toString(), // Int/String dono ko handle karne ke liye
       speciality: json['speciality'],
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      "_id": id,
+      "name": name,
+      "email": email,
+      "role": role,
+      "profileImage": profileImage,
+      "fatherName": fatherName,
+      "cnic": cnic,
+      "department": department,
+      "rollNumber": rollNumber,
+      "semester": semester,
+      "section": section,
+      "qualification": qualification,
+      "experience": experience,
+      "speciality": speciality,
+    };
   }
 }

@@ -44,10 +44,10 @@ const aiCourseRoutes = require("./routes/aiCourseRoutes");
 app.use("/api/ai", aiCourseRoutes);
 
 const aiplanWeekRoutes = require("./routes/aiplanRoutes");
-app.use("/api/plans", aiplanWeekRoutes);
+app.use("/api/ai/plans", aiplanWeekRoutes); // 🔥 Humne path prefix unique kar diya
 
 const aiQuizRoutes = require("./routes/aiquizRoutes");
-app.use("/api/quizzes", aiQuizRoutes);
+app.use("/api/ai/quizzes", aiQuizRoutes);
 
 // app.use("/api/quizzes", aiQuizRoutes);
 // ✅ Serve static PDFs

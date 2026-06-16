@@ -1,369 +1,185 @@
 import 'package:flutter/material.dart';
 import 'package:frontened/Provider/pdf_provider.dart';
+import 'package:frontened/Provider/quiz_provider.dart';
 import 'package:frontened/Provider/week_plan_provider.dart';
 import 'package:provider/provider.dart';
 
 class CourseDetailScreen extends StatefulWidget {
   const CourseDetailScreen({super.key});
-
   static const String routeName = '/course-detail';
 
   @override
   State<CourseDetailScreen> createState() => _CourseDetailScreenState();
 }
 
-class _CourseDetailScreenState extends State<CourseDetailScreen> {
+class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTickerProviderStateMixin {
   bool _loaded = false;
-
   late final course;
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-
     if (_loaded) return;
-
     final args = ModalRoute.of(context)?.settings.arguments;
-
     if (args != null) {
       course = args;
-
       Future.microtask(() {
-        Provider.of<WeekPlanProvider>(context, listen: false)
-            .fetchPlan(course.id);
+        context.read<WeekPlanProvider>().fetchPlan(course.id);
+        context.read<QuizProvider>().fetchAllQuizzes(); // Fetch quizzes to filter later
       });
-
       _loaded = true;
     }
   }
 
   @override
-  Widget build(BuildContext context) {
-    final plan = Provider.of<WeekPlanProvider>(context).plan;
-
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios,
-              size: 22, color: AppColors.textPrimary),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          "Course Details",
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        centerTitle: true,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 10),
-
-            Text(
-              course.title ?? "Course Title",
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-              ),
-            ),
-
-            const SizedBox(height: 6),
-
-            Text(
-              "Instructor: ${course.teacherName ?? "Unknown"}",
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 14,
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            /// COURSE PDF
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.05),
-                    blurRadius: 12,
-                    offset: const Offset(0, 6),
-                  )
-                ],
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.picture_as_pdf,
-                      color: AppColors.error, size: 30),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      "Course Outline.pdf",
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ),
-
-                  Consumer<PdfProvider>(
-                    builder: (context, pdfProvider, _) {
-                      return TextButton(
-                        onPressed: pdfProvider.isLoading
-                            ? null
-                            : () async {
-                                await pdfProvider.openPDF(course.id);
-
-                                if (pdfProvider.file == null) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content:
-                                          Text("Failed to open PDF"),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                } else {
-                                  ScaffoldMessenger.of(context)
-                                      .showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                          "PDF opened successfully"),
-                                      backgroundColor: Colors.green,
-                                    ),
-                                  );
-                                }
-                              },
-                        child: pdfProvider.isLoading
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2),
-                              )
-                            : const Text(
-                                "Open",
-                                style: TextStyle(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            RichText(
-              text: TextSpan(
-                children: [
-                  const TextSpan(
-                    text: "Weekly Plan ",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  if (plan?.semesterDuration != null)
-                    TextSpan(
-                      text:
-                          "(${plan!.semesterDuration} Weeks)",
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            Expanded(
-              child: Consumer<WeekPlanProvider>(
-                builder: (context, provider, child) {
-                  if (provider.isLoading) {
-                    return const Center(
-                        child: CircularProgressIndicator());
-                  }
-
-                  if (provider.plan == null ||
-                      provider.plan!.weeks.isEmpty) {
-                    return const Center(
-                      child: Text("No Weekly Plan Found"),
-                    );
-                  }
-
-                  final weeks = provider.plan!.weeks;
-
-                  return ListView.builder(
-                    itemCount: weeks.length,
-                    itemBuilder: (context, index) {
-                      final week = weeks[index];
-
-                      return WeekItem(
-                        courseId: course.id,
-                        weekNumber: week.weekNumber,
-                        week: "Week ${week.weekNumber}",
-                        topic: week.topics.isNotEmpty
-    ? week.topics.map((t) => t).join("\n")
-    : "No topics available",
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
-}
-
-/// ============================
-/// WEEK ITEM
-/// ============================
-class WeekItem extends StatelessWidget {
-  final String courseId;
-  final int weekNumber;
-  final String week;
-  final String topic;
-
-  const WeekItem({
-    super.key,
-    required this.courseId,
-    required this.weekNumber,
-    required this.week,
-    required this.topic,
-  });
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<WeekPlanProvider>(
-      builder: (context, provider, _) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: const Color(0xFF4F46E5),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, size: 20, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(course.title ?? "Course Workspace", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+            Text("Instructor: ${course.teacherName ?? "Unknown"}", style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(60),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(15)),
+            child: TabBar(
+              controller: _tabController,
+              indicator: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+              labelColor: const Color(0xFF4F46E5),
+              unselectedLabelColor: Colors.white,
+              labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+              tabs: const [Tab(text: "Syllabus"), Tab(text: "Quizzes")],
+            ),
+          ),
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [_buildSyllabusTab(), _buildQuizzesTab()],
+      ),
+    );
+  }
+
+  Widget _buildSyllabusTab() {
+    final provider = context.watch<WeekPlanProvider>();
+    final pdfProvider = context.watch<PdfProvider>();
+
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // MASTER PDF BUTTON
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))]),
+            child: Row(
+              children: [
+                const Icon(Icons.picture_as_pdf, color: Colors.red, size: 30),
+                const SizedBox(width: 12),
+                const Expanded(child: Text("Course Outline.pdf", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+                ElevatedButton(
+                  onPressed: pdfProvider.isLoading ? null : () => pdfProvider.openPDF(course.id),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4F46E5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                  child: pdfProvider.isLoading ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Text("Open", style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text("18-Week Plan", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
+          const SizedBox(height: 12),
+          Expanded(
+            child: provider.isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : (provider.plan == null || provider.plan!.weeks.isEmpty)
+                ? const Center(child: Text("No Weekly Plan Found", style: TextStyle(color: Colors.grey)))
+                : ListView.builder(
+              itemCount: provider.plan!.weeks.length,
+              itemBuilder: (context, index) {
+                final week = provider.plan!.weeks[index];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200)),
+                  child: ListTile(
+                    leading: CircleAvatar(backgroundColor: const Color(0xFF4F46E5).withOpacity(0.1), child: Text("${week.weekNumber}", style: const TextStyle(color: Color(0xFF4F46E5), fontWeight: FontWeight.bold))),
+                    title: Text("Week ${week.weekNumber}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text(week.subTopics.join(", "), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    trailing: provider.isWeekLoading(week.weekNumber)
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : IconButton(
+                      icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
+                      onPressed: () => provider.downloadAndOpenWeekPDF(course.id, week.weekNumber),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuizzesTab() {
+    final provider = context.watch<QuizProvider>();
+    final courseQuizzes = provider.quizzes.where((q) => q.course == course.id).toList();
+
+    if (provider.isLoading) return const Center(child: CircularProgressIndicator());
+    if (courseQuizzes.isEmpty) return const Center(child: Text("No quizzes assigned for this course yet.", style: TextStyle(color: Colors.grey)));
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(20),
+      itemCount: courseQuizzes.length,
+      itemBuilder: (context, index) {
+        final quiz = courseQuizzes[index];
+        final isCompleted = quiz.isCompleted == true;
+
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primary.withValues(alpha: 0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
-              )
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.calendar_today,
-                  size: 16,
-                  color: AppColors.primary,
-                ),
-              ),
-              const SizedBox(width: 12),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      week,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      topic,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              /// 📄 PDF BUTTON
-              provider.isWeekLoading(weekNumber)
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child:
-                          CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : IconButton(
-                      icon: const Icon(Icons.picture_as_pdf,
-                          color: AppColors.error),
-                      onPressed: () async {
-                        final success =
-                            await provider.downloadAndOpenWeekPDF(
-                          courseId,
-                          weekNumber,
-                        );
-
-                        if (!success) {
-                          ScaffoldMessenger.of(context)
-                              .showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                  "Failed to open Week PDF"),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        } else {
-                          ScaffoldMessenger.of(context)
-                              .showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                  "Week $weekNumber PDF opened"),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
-                        }
-                      },
-                    ),
-            ],
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200)),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: Icon(isCompleted ? Icons.check_circle : Icons.quiz, color: isCompleted ? Colors.green : const Color(0xFF4F46E5), size: 30),
+            title: Text(quiz.title ?? "Untitled Quiz", style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(isCompleted ? "Score: ${quiz.score ?? 0} Marks" : "Pending Attempt", style: TextStyle(color: isCompleted ? Colors.green : Colors.orange, fontWeight: FontWeight.bold)),
+            trailing: isCompleted
+                ? const Icon(Icons.arrow_forward_ios, size: 16)
+                : ElevatedButton(
+              onPressed: () => Navigator.pushNamed(context, '/quiz-attempt', arguments: quiz),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4F46E5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+              child: const Text("Attempt", style: TextStyle(color: Colors.white)),
+            ),
+            onTap: isCompleted ? () => Navigator.pushNamed(context, '/quiz-result', arguments: quiz) : null,
           ),
         );
       },
     );
   }
-}
-
-/// ============================
-/// COLORS
-/// ============================
-class AppColors {
-  static const Color primary = Color(0xFF4F46E5);
-  static const Color secondary = Color(0xFF7C3AED);
-  static const Color background = Colors.white;
-  static const Color surface = Colors.white;
-  static const Color textPrimary = Color(0xFF1E1B4B);
-  static const Color textSecondary = Color(0xFF6B7280);
-  static const Color error = Color(0xFFEF4444);
 }

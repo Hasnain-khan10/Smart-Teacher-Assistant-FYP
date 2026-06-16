@@ -1,803 +1,478 @@
 import 'package:flutter/material.dart';
 import 'package:frontened/Provider/quiz_provider.dart';
+import 'package:frontened/Provider/course_provider.dart';
 import 'package:provider/provider.dart';
 
-
-class TeacherManuallyQuizScreen extends StatefulWidget {
+class TeacherManualQuizScreen extends StatefulWidget {
   final String courseId;
- 
   final String quizTitle;
 
-  const TeacherManuallyQuizScreen({
-    super.key,
-    required this.courseId,
-    required this.quizTitle,
-  });
+  const TeacherManualQuizScreen({super.key, required this.courseId, required this.quizTitle});
 
   @override
-  State<TeacherManuallyQuizScreen> createState() =>
-      _TeacherManuallyQuizScreenState();
+  State<TeacherManualQuizScreen> createState() => _TeacherManualQuizScreenState();
 }
 
-class _TeacherManuallyQuizScreenState
-    extends State<TeacherManuallyQuizScreen> {
+class _TeacherManualQuizScreenState extends State<TeacherManualQuizScreen> {
+  // Toggle State: true = MCQ Mode, false = Question Mode
+  bool isMcqMode = true;
 
-  final TextEditingController _titleController = TextEditingController();
+  List<Map<String, dynamic>> mcqQuestions = [];
+  List<Map<String, dynamic>> subjectiveQuestions = [];
 
-  String _selectedType = "mcq";
+  // Edit State Trackers
+  int? editingMcqIndex;
+  int? editingSubjIndex;
 
-  final List<Map<String, dynamic>> _questions = [];
+  // Controllers for MCQ
+  final mcqStatementCtrl = TextEditingController();
+  final optACtrl = TextEditingController();
+  final optBCtrl = TextEditingController();
+  final optCCtrl = TextEditingController();
+  final optDCtrl = TextEditingController();
+  final mcqMarksCtrl = TextEditingController(text: "1");
+  String correctOption = "A";
+
+  // Controllers for Subjective Questions
+  final qStatementCtrl = TextEditingController();
+  final qMarksCtrl = TextEditingController(text: "5");
+  String qType = "short"; // short or long
 
   @override
   void initState() {
     super.initState();
-     _titleController.text = widget.quizTitle;
-    _addQuestion();
+    Future.microtask(() => context.read<CourseProvider>().fetchCourses());
   }
 
   @override
   void dispose() {
-    _titleController.dispose();
-
-    for (final q in _questions) {
-      (q["question"] as TextEditingController).dispose();
-      (q["optionA"] as TextEditingController).dispose();
-      (q["optionB"] as TextEditingController).dispose();
-      (q["optionC"] as TextEditingController).dispose();
-      (q["optionD"] as TextEditingController).dispose();
-      (q["marks"] as TextEditingController).dispose();
-    }
-
+    mcqStatementCtrl.dispose(); optACtrl.dispose(); optBCtrl.dispose(); optCCtrl.dispose(); optDCtrl.dispose(); mcqMarksCtrl.dispose();
+    qStatementCtrl.dispose(); qMarksCtrl.dispose();
     super.dispose();
   }
 
-  // ================================
-  // ADD QUESTION
-  // ================================
-  void _addQuestion() {
-    setState(() {
-      _questions.add({
-        "question": TextEditingController(),
-
-        // MCQ
-        "optionA": TextEditingController(),
-        "optionB": TextEditingController(),
-        "optionC": TextEditingController(),
-        "optionD": TextEditingController(),
-        "correctAnswer": "A",
-
-        // COMMON
-        "marks": TextEditingController(text: "1"),
-      });
-    });
-  }
-
-  // ================================
-  // REMOVE QUESTION
-  // ================================
-  void _removeQuestion(int index) {
-    if (_questions.length == 1) return;
-
-    setState(() {
-      _questions.removeAt(index);
-    });
-  }
-
-  // ================================
-  // CREATE QUIZ
-  // ================================
-  // ================================
-// CREATE QUIZ
-// ================================
-Future<void> _createQuiz() async {
-  final provider = context.read<QuizProvider>();
-
-  final title = _titleController.text.trim();
-
-  if (title.isEmpty) {
-    _show("Enter quiz title");
-    return;
-  }
-
-  final List<Map<String, dynamic>> mcqQuestions = [];
-  final List<Map<String, dynamic>> shortQuestions = [];
-
-  for (final q in _questions) {
-    final question =
-        (q["question"] as TextEditingController).text.trim();
-
-    final marks =
-        int.tryParse((q["marks"] as TextEditingController).text.trim()) ?? 1;
-
-    if (question.isEmpty) continue;
-
-    if (_selectedType == "mcq") {
-      final a = (q["optionA"] as TextEditingController).text.trim();
-      final b = (q["optionB"] as TextEditingController).text.trim();
-      final c = (q["optionC"] as TextEditingController).text.trim();
-      final d = (q["optionD"] as TextEditingController).text.trim();
-
-      if (a.isEmpty || b.isEmpty || c.isEmpty || d.isEmpty) {
-        _show("Fill all MCQ options");
-        return;
-      }
-
-      mcqQuestions.add({
-        "question": question,
-        "options": {
-          "A": a,
-          "B": b,
-          "C": c,
-          "D": d,
-        },
-        "correctAnswer": q["correctAnswer"] ?? "A",
-        "marks": marks,
-      });
-    } else {
-      shortQuestions.add({
-        "question": question,
-        "marks": marks,
-      });
+  // 🔥 Auto-fetch Subject Name
+  String _getCourseTitle(BuildContext context) {
+    final courses = context.read<CourseProvider>().courses;
+    try {
+      return courses.firstWhere((c) => c.id == widget.courseId).title;
+    } catch (e) {
+      return "Unknown Subject";
     }
   }
 
-  if (_selectedType == "mcq" && mcqQuestions.isEmpty) {
-    _show("Add at least one MCQ");
-    return;
+  // 🧮 Live Total Marks Calculator
+  int get _totalMarks {
+    int mcqTotal = mcqQuestions.fold(0, (sum, item) => sum + (item["marks"] as int));
+    int subjTotal = subjectiveQuestions.fold(0, (sum, item) => sum + (item["marks"] as int));
+    return mcqTotal + subjTotal;
   }
 
-  if (_selectedType == "question" && shortQuestions.isEmpty) {
-    _show("Add at least one question");
-    return;
+  // ==================== MCQ LOGIC ====================
+  void _addOrUpdateMCQ() {
+    if (mcqStatementCtrl.text.isEmpty || optACtrl.text.isEmpty || optBCtrl.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please fill the statement and at least Options A & B"), backgroundColor: Colors.red));
+      return;
+    }
+
+    final newMcq = {
+      "question": mcqStatementCtrl.text.trim(),
+      "options": {
+        "A": optACtrl.text.trim(), "B": optBCtrl.text.trim(),
+        "C": optCCtrl.text.trim().isNotEmpty ? optCCtrl.text.trim() : "None",
+        "D": optDCtrl.text.trim().isNotEmpty ? optDCtrl.text.trim() : "None",
+      },
+      "correctAnswer": correctOption,
+      "marks": int.tryParse(mcqMarksCtrl.text.trim()) ?? 1
+    };
+
+    setState(() {
+      if (editingMcqIndex != null) {
+        mcqQuestions[editingMcqIndex!] = newMcq;
+        editingMcqIndex = null; // Exit edit mode
+      } else {
+        mcqQuestions.add(newMcq);
+      }
+
+      // Clear Fields
+      mcqStatementCtrl.clear(); optACtrl.clear(); optBCtrl.clear(); optCCtrl.clear(); optDCtrl.clear();
+      correctOption = "A"; mcqMarksCtrl.text = "1";
+    });
+
+    FocusScope.of(context).unfocus(); // Drops the keyboard
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("MCQ Saved!"), backgroundColor: Colors.green, duration: Duration(milliseconds: 800)));
   }
 
-  final success = await provider.createQuiz(
-    courseId: widget.courseId,
-    title: title, 
-    type: _selectedType,
-
-    questions: _selectedType == "mcq" ? mcqQuestions : null,
-    shortQuestions: _selectedType == "question" ? shortQuestions : null,
-    longQuestions: [],
-  );
-
-  if (!mounted) return;
-
-  if (success) {
-    Navigator.pop(context);
-    _show("Quiz created successfully");
-  } else {
-    _show(provider.error ?? "Failed to create quiz");
+  void _editMCQ(int index) {
+    final q = mcqQuestions[index];
+    setState(() {
+      editingMcqIndex = index;
+      mcqStatementCtrl.text = q["question"];
+      optACtrl.text = q["options"]["A"];
+      optBCtrl.text = q["options"]["B"];
+      optCCtrl.text = q["options"]["C"] == "None" ? "" : q["options"]["C"];
+      optDCtrl.text = q["options"]["D"] == "None" ? "" : q["options"]["D"];
+      correctOption = q["correctAnswer"];
+      mcqMarksCtrl.text = q["marks"].toString();
+    });
   }
-}
 
-  // ================================
-  // SNACKBAR
-  // ================================
-  void _show(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
+  // ==================== SUBJECTIVE LOGIC ====================
+  void _addOrUpdateSubjectiveQuestion() {
+    if (qStatementCtrl.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please enter the question statement"), backgroundColor: Colors.red));
+      return;
+    }
+
+    final newSubj = {
+      "question": qStatementCtrl.text.trim(),
+      "marks": int.tryParse(qMarksCtrl.text.trim()) ?? 5,
+      "type": qType
+    };
+
+    setState(() {
+      if (editingSubjIndex != null) {
+        subjectiveQuestions[editingSubjIndex!] = newSubj;
+        editingSubjIndex = null; // Exit edit mode
+      } else {
+        subjectiveQuestions.add(newSubj);
+      }
+
+      // Clear Fields
+      qStatementCtrl.clear(); qMarksCtrl.text = "5";
+    });
+
+    FocusScope.of(context).unfocus(); // Drops the keyboard
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Subjective Question Saved!"), backgroundColor: Colors.green, duration: Duration(milliseconds: 800)));
+  }
+
+  void _editSubjective(int index) {
+    final q = subjectiveQuestions[index];
+    setState(() {
+      editingSubjIndex = index;
+      qStatementCtrl.text = q["question"];
+      qMarksCtrl.text = q["marks"].toString();
+      qType = q["type"];
+    });
+  }
+
+  // ==================== SUBMIT QUIZ ====================
+  Future<void> _submitManualQuiz() async {
+    if (mcqQuestions.isEmpty && subjectiveQuestions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Add at least one question to publish!"), backgroundColor: Colors.red));
+      return;
+    }
+
+    final provider = context.read<QuizProvider>();
+
+    List<Map<String, dynamic>> shorts = subjectiveQuestions.where((q) => q["type"] == "short").toList();
+    List<Map<String, dynamic>> longs = subjectiveQuestions.where((q) => q["type"] == "long").toList();
+
+    String finalType = "mixed";
+    if (mcqQuestions.isNotEmpty && shorts.isEmpty && longs.isEmpty) finalType = "mcq";
+    if (mcqQuestions.isEmpty && (shorts.isNotEmpty || longs.isNotEmpty)) finalType = "question";
+
+    bool success = await provider.createQuiz(
+      courseId: widget.courseId,
+      title: widget.quizTitle,
+      type: finalType,
+      questions: mcqQuestions,
+      shortQuestions: shorts,
+      longQuestions: longs,
     );
+
+    if (success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Manual Exam Published Successfully! 🎉"), backgroundColor: Colors.green));
+      Navigator.pop(context);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(provider.error ?? "Failed to publish quiz"), backgroundColor: Colors.red));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<QuizProvider>();
-
-    final isMCQ = _selectedType == "mcq";
+    final String courseTitle = _getCourseTitle(context);
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // =================================
-              // HEADER
-              // =================================
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                child: Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        height: 42,
-                        width: 42,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.04),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            )
-                          ],
-                        ),
-                        child: const Icon(
-                          Icons.arrow_back_ios_new,
-                          size: 18,
-                        ),
-                      ),
-                    ),
-
-                    const Expanded(
-                      child: Text(
-                        "Create Quiz",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF1E1E1E),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(width: 42),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  children: [
-                    // =================================
-                    // COURSE CARD
-                    // =================================
-                    Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.96),
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.deepPurple.withValues(alpha: 0.08),
-                            blurRadius: 25,
-                            offset: const Offset(0, 12),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            height: 58,
-                            width: 58,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [
-                                  Color(0xFF8B5CF6),
-                                  Color(0xFF6D28D9),
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: const Icon(
-                              Icons.menu_book_rounded,
-                              color: Colors.white,
-                              size: 28,
-                            ),
-                          ),
-
-                          const SizedBox(width: 14),
-
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  "Quiz",
-                                  style: TextStyle(
-                                    color: Colors.grey,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  widget.quizTitle,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 16,
-                                    color: Color(0xFF1E1E1E),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // =================================
-                    // TYPE SELECTOR
-                    // =================================
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _typeButton(
-                            title: "MCQ Quiz",
-                            icon: Icons.quiz_rounded,
-                            value: "mcq",
-                          ),
-                        ),
-
-                        const SizedBox(width: 14),
-
-                        Expanded(
-                          child: _typeButton(
-                            title: "Questions",
-                            icon: Icons.description_rounded,
-                            value: "question",
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // =================================
-                    // TITLE FIELD
-                    // =================================
-                   _inputField(
-  controller: _titleController,
-  hint: "Enter Quiz Title",
-  icon: Icons.title_rounded,
-),
-
-                    const SizedBox(height: 24),
-
-                    // =================================
-                    // QUESTIONS
-                    // =================================
-                    ListView.builder(
-                      itemCount: _questions.length,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemBuilder: (_, index) {
-                        return _questionCard(index, isMCQ);
-                      },
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    // =================================
-                    // ADD QUESTION
-                    // =================================
-                    GestureDetector(
-                      onTap: _addQuestion,
-                      child: Container(
-                        height: 58,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: Colors.deepPurple,
-                            width: 1.4,
-                          ),
-                        ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.add_circle_outline_rounded,
-                              color: Colors.deepPurple,
-                            ),
-                            SizedBox(width: 10),
-                            Text(
-                              "Add Question",
-                              style: TextStyle(
-                                color: Colors.deepPurple,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // =================================
-                    // CREATE BUTTON
-                    // =================================
-                    GestureDetector(
-                      onTap:
-                          provider.isCreating ? null : _createQuiz,
-                      child: Container(
-                        height: 60,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [
-                              Color(0xFF7C3AED),
-                              Color(0xFF5B21B6),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.deepPurple.withValues(alpha: 0.35),
-                              blurRadius: 20,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
-                        ),
-                        child: Center(
-                          child: provider.isCreating
-                              ? const SizedBox(
-                                  height: 24,
-                                  width: 24,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2.5,
-                                  ),
-                                )
-                              : const Text(
-                                  "Create Quiz",
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 30),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // =================================
-  // TYPE BUTTON
-  // =================================
-  Widget _typeButton({
-    required String title,
-    required IconData icon,
-    required String value,
-  }) {
-    final selected = _selectedType == value;
-
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedType = value;
-          _questions.clear();
-          _addQuestion();
-        });
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          gradient: selected
-              ? const LinearGradient(
-                  colors: [
-                    Color(0xFF8B5CF6),
-                    Color(0xFF6D28D9),
-                  ],
-                )
-              : null,
-          color: selected ? null : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected
-                ? Colors.transparent
-                : Colors.deepPurple.withValues(alpha: 0.15),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: selected
-                  ? Colors.deepPurple.withValues(alpha: 0.22)
-                  : Colors.black.withValues(alpha: 0.03),
-              blurRadius: 15,
-              offset: const Offset(0, 8),
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        title: Text(widget.quizTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: const Color(0xFF4F46E5),
+        elevation: 0,
+        actions: [
+          // 🔥 Live Total Marks Badge in App Bar
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(right: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(20)),
+              child: Text("Total: $_totalMarks Marks", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Icon(
-              icon,
-              color: selected ? Colors.white : Colors.deepPurple,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: TextStyle(
-                color: selected ? Colors.white : Colors.black87,
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // =================================
-  // QUESTION CARD
-  // =================================
-  Widget _questionCard(int index, bool isMCQ) {
-    final q = _questions[index];
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 18),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.98),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
+          )
         ],
       ),
-      child: Column(
+      body: Column(
         children: [
-          // ================= HEADER
-          Row(
-            children: [
-              Container(
-                height: 38,
-                width: 38,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [
-                      Color(0xFF8B5CF6),
-                      Color(0xFF6D28D9),
+          // ---------------- HEADER SECTION ----------------
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                // Highlighted Locked Subject Name
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(color: const Color(0xFF4F46E5).withOpacity(0.05), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFF4F46E5).withOpacity(0.2))),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.school, color: Color(0xFF4F46E5)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text("Subject Domain", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                            Text(courseTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF4F46E5))),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.lock, color: Colors.grey, size: 18),
                     ],
                   ),
-                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Center(
-                  child: Text(
-                    "${index + 1}",
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
+                const SizedBox(height: 20),
+
+                // Inline Mode Toggles
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() {
+                          isMcqMode = true;
+                          editingSubjIndex = null; // Clear edit state on switch
+                        }),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          decoration: BoxDecoration(color: isMcqMode ? const Color(0xFF4F46E5) : Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: isMcqMode ? const Color(0xFF4F46E5) : Colors.grey.shade300)),
+                          child: Center(child: Text("MCQs Maker", style: TextStyle(fontWeight: FontWeight.bold, color: isMcqMode ? Colors.white : Colors.black54))),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(width: 12),
-
-              const Expanded(
-                child: Text(
-                  "Question",
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-
-              GestureDetector(
-                onTap: () => _removeQuestion(index),
-                child: Container(
-                  height: 38,
-                  width: 38,
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.delete_outline_rounded,
-                    color: Colors.red,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 18),
-
-          // ================= QUESTION FIELD
-          _inputField(
-            controller: q["question"],
-            hint: "Enter your question",
-            icon: Icons.help_outline_rounded,
-            maxLines: 3,
-          ),
-
-          const SizedBox(height: 16),
-
-          // ================= MCQ
-          if (isMCQ) ...[
-            _optionField(
-              label: "A",
-              controller: q["optionA"],
-            ),
-
-            const SizedBox(height: 12),
-
-            _optionField(
-              label: "B",
-              controller: q["optionB"],
-            ),
-
-            const SizedBox(height: 12),
-
-            _optionField(
-              label: "C",
-              controller: q["optionC"],
-            ),
-
-            const SizedBox(height: 12),
-
-            _optionField(
-              label: "D",
-              controller: q["optionD"],
-            ),
-
-            const SizedBox(height: 16),
-
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF5F3FF),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: q["correctAnswer"],
-                  isExpanded: true,
-                  borderRadius: BorderRadius.circular(16),
-                  items: const [
-                    DropdownMenuItem(
-                      value: "A",
-                      child: Text("Correct Answer: A"),
-                    ),
-                    DropdownMenuItem(
-                      value: "B",
-                      child: Text("Correct Answer: B"),
-                    ),
-                    DropdownMenuItem(
-                      value: "C",
-                      child: Text("Correct Answer: C"),
-                    ),
-                    DropdownMenuItem(
-                      value: "D",
-                      child: Text("Correct Answer: D"),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() {
+                          isMcqMode = false;
+                          editingMcqIndex = null; // Clear edit state on switch
+                        }),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          decoration: BoxDecoration(color: !isMcqMode ? Colors.green.shade600 : Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: !isMcqMode ? Colors.green.shade600 : Colors.grey.shade300)),
+                          child: Center(child: Text("Subjective Qs", style: TextStyle(fontWeight: FontWeight.bold, color: !isMcqMode ? Colors.white : Colors.black54))),
+                        ),
+                      ),
                     ),
                   ],
-                  onChanged: (v) {
-                    setState(() {
-                      q["correctAnswer"] = v;
-                    });
-                  },
                 ),
-              ),
+              ],
             ),
-
-            const SizedBox(height: 16),
-          ],
-
-          // ================= MARKS
-          _inputField(
-            controller: q["marks"],
-            hint: "Marks",
-            icon: Icons.star_outline_rounded,
-            keyboardType: TextInputType.number,
           ),
-        ],
-      ),
-    );
-  }
 
-  // =================================
-  // INPUT FIELD
-  // =================================
-  Widget _inputField({
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-    int maxLines = 1,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F8FC),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: Colors.deepPurple.withValues(alpha: 0.08),
-        ),
-      ),
-      child: TextField(
-        controller: controller,
-        maxLines: maxLines,
-        keyboardType: keyboardType,
-        style: const TextStyle(
-          fontWeight: FontWeight.w500,
-        ),
-        decoration: InputDecoration(
-          hintText: hint,
-          prefixIcon: Icon(
-            icon,
-            color: Colors.deepPurple,
-          ),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 18,
-            vertical: 18,
-          ),
-        ),
-      ),
-    );
-  }
+          // ---------------- DYNAMIC BODY SECTION (Scrollable Form + List) ----------------
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  // 1. INPUT FORM CARD
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))]),
+                    child: isMcqMode ? _buildMCQForm() : _buildSubjectiveForm(),
+                  ),
 
-  // =================================
-  // OPTION FIELD
-  // =================================
-  Widget _optionField({
-    required String label,
-    required TextEditingController controller,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F8FC),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          Container(
-            height: 54,
-            width: 54,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Color(0xFF8B5CF6),
-                  Color(0xFF6D28D9),
+                  const SizedBox(height: 24),
+
+                  // 2. REAL-TIME FILTERED QUESTIONS LIST
+                  _buildQuestionsBankList(),
                 ],
               ),
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(18),
-                bottomLeft: Radius.circular(18),
-              ),
-            ),
-            child: Center(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16,
-                ),
-              ),
             ),
           ),
 
-          Expanded(
-            child: TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                hintText: "Enter option",
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(horizontal: 16),
+          // ---------------- BOTTOM PUBLISH ACTION ----------------
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -4))]),
+            child: SizedBox(
+              width: double.infinity,
+              height: 55,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.black87, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                icon: provider.isLoading ? const SizedBox.shrink() : const Icon(Icons.cloud_upload, color: Colors.white),
+                label: provider.isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : Text("Publish Exam (${mcqQuestions.length + subjectiveQuestions.length} Qs)", style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                onPressed: provider.isLoading ? null : _submitManualQuiz,
               ),
             ),
-          ),
+          )
         ],
       ),
+    );
+  }
+
+  // --- WIDGET: MCQ FORM ---
+  Widget _buildMCQForm() {
+    bool isEditing = editingMcqIndex != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(isEditing ? "Edit MCQ Question" : "Design Multiple Choice Question", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF4F46E5))),
+        const SizedBox(height: 16),
+        TextField(controller: mcqStatementCtrl, maxLines: 2, decoration: InputDecoration(labelText: "Question Statement", border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)))),
+        const SizedBox(height: 12),
+        Row(children: [ Expanded(child: TextField(controller: optACtrl, decoration: const InputDecoration(labelText: "Option A", isDense: true))), const SizedBox(width: 10), Expanded(child: TextField(controller: optBCtrl, decoration: const InputDecoration(labelText: "Option B", isDense: true))) ]),
+        const SizedBox(height: 12),
+        Row(children: [ Expanded(child: TextField(controller: optCCtrl, decoration: const InputDecoration(labelText: "Option C", isDense: true))), const SizedBox(width: 10), Expanded(child: TextField(controller: optDCtrl, decoration: const InputDecoration(labelText: "Option D", isDense: true))) ]),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: DropdownButtonFormField<String>(
+                value: correctOption,
+                isExpanded: true,
+                decoration: InputDecoration(labelText: "Correct Answer Key", border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
+                items: ["A", "B", "C", "D"].map((e) => DropdownMenuItem(value: e, child: Text("Option $e"))).toList(),
+                onChanged: (val) => setState(() => correctOption = val!),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 1,
+              child: TextField(controller: mcqMarksCtrl, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: "Marks", border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)))),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+            width: double.infinity,
+            height: 45,
+            child: OutlinedButton.icon(
+                onPressed: _addOrUpdateMCQ,
+                icon: Icon(isEditing ? Icons.update : Icons.add),
+                label: Text(isEditing ? "Update MCQ" : "Add MCQ to Bank", style: const TextStyle(fontWeight: FontWeight.bold)),
+                style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF4F46E5), side: const BorderSide(color: Color(0xFF4F46E5)))
+            )
+        ),
+      ],
+    );
+  }
+
+  // --- WIDGET: SUBJECTIVE FORM ---
+  Widget _buildSubjectiveForm() {
+    bool isEditing = editingSubjIndex != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(isEditing ? "Edit Subjective Question" : "Design Subjective Question", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
+        const SizedBox(height: 16),
+        TextField(controller: qStatementCtrl, maxLines: 3, decoration: InputDecoration(labelText: "Question Statement", border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)))),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                value: qType,
+                isExpanded: true,
+                decoration: InputDecoration(labelText: "Question Size", border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
+                items: const [
+                  DropdownMenuItem(value: "short", child: Text("Short Answer", overflow: TextOverflow.ellipsis)),
+                  DropdownMenuItem(value: "long", child: Text("Long Essay", overflow: TextOverflow.ellipsis))
+                ],
+                onChanged: (val) => setState(() => qType = val!),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: TextField(controller: qMarksCtrl, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: "Marks", border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))))),
+          ],
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+            width: double.infinity,
+            height: 45,
+            child: OutlinedButton.icon(
+                onPressed: _addOrUpdateSubjectiveQuestion,
+                icon: Icon(isEditing ? Icons.update : Icons.add),
+                label: Text(isEditing ? "Update Question" : "Add Question to Bank", style: const TextStyle(fontWeight: FontWeight.bold)),
+                style: OutlinedButton.styleFrom(foregroundColor: Colors.green, side: const BorderSide(color: Colors.green))
+            )
+        ),
+      ],
+    );
+  }
+
+  // --- WIDGET: FILTERED QUESTIONS BANK LIST (Real-time View) ---
+  Widget _buildQuestionsBankList() {
+    // Determine which list to show based on the active tab
+    List<Map<String, dynamic>> activeList = isMcqMode ? mcqQuestions : subjectiveQuestions;
+
+    if (activeList.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(isMcqMode ? "Added MCQs Bank" : "Added Subjective Bank", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+        ),
+
+        ...activeList.asMap().entries.map((entry) {
+          int index = entry.key;
+          Map<String, dynamic> q = entry.value;
+
+          if (isMcqMode) {
+            return Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: ListTile(
+                leading: CircleAvatar(backgroundColor: const Color(0xFF4F46E5), child: const Icon(Icons.format_list_bulleted, color: Colors.white, size: 18)),
+                title: Text(q["question"], style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text("Ans: Option ${q["correctAnswer"]}  •  Marks: ${q["marks"]}", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 13)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(icon: const Icon(Icons.edit, color: Colors.blue), onPressed: () => _editMCQ(index)),
+                    IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red), onPressed: () => setState(() => mcqQuestions.removeAt(index))),
+                  ],
+                ),
+              ),
+            );
+          } else {
+            bool isShort = q["type"] == "short";
+            return Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: ListTile(
+                leading: CircleAvatar(backgroundColor: Colors.green, child: Icon(isShort ? Icons.short_text : Icons.subject, color: Colors.white, size: 18)),
+                title: Text(q["question"], style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text("Type: ${isShort ? 'Short Answer' : 'Long Essay'}  •  Marks: ${q["marks"]}", style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.bold, fontSize: 13)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(icon: const Icon(Icons.edit, color: Colors.blue), onPressed: () => _editSubjective(index)),
+                    IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red), onPressed: () => setState(() => subjectiveQuestions.removeAt(index))),
+                  ],
+                ),
+              ),
+            );
+          }
+        }),
+      ],
     );
   }
 }

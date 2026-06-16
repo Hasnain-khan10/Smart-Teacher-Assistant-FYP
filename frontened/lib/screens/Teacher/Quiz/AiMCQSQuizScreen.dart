@@ -1,558 +1,198 @@
 import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:frontened/Provider/quiz_provider.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 
+import 'package:frontened/Provider/quiz_provider.dart';
+import 'package:frontened/Provider/course_provider.dart';
 
 class TeacherAIMCQSQuizScreen extends StatefulWidget {
-  final String  quizTitle;
   final String courseId;
+  final String quizTitle;
 
   const TeacherAIMCQSQuizScreen({
     super.key,
-    required this.quizTitle,
     required this.courseId,
+    required this.quizTitle,
   });
 
   @override
-  State<TeacherAIMCQSQuizScreen> createState() =>
-      _TeacherAIMCQSQuizScreenState();
+  State<TeacherAIMCQSQuizScreen> createState() => _TeacherAIMCQSQuizScreenState();
 }
 
-class _TeacherAIMCQSQuizScreenState
-    extends State<TeacherAIMCQSQuizScreen> {
+class _TeacherAIMCQSQuizScreenState extends State<TeacherAIMCQSQuizScreen> {
+  File? pdfFile;
 
-  // ================= CONTROLLERS =================
+  final promptController = TextEditingController();
+  final countController = TextEditingController(text: "10");
+  final marksController = TextEditingController(text: "1");
+  String difficulty = "Medium";
 
-  final TextEditingController _promptController =
-      TextEditingController();
-
-  final TextEditingController _questionCountController =
-      TextEditingController(text: "10");
-
-  final TextEditingController _marksController =
-      TextEditingController(text: "1");
-
-  String _difficulty = "medium";
-
-  File? _selectedFile;
-
-  // ================= DISPOSE =================
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() => context.read<CourseProvider>().fetchCourses());
+  }
 
   @override
   void dispose() {
-    _promptController.dispose();
-    _questionCountController.dispose();
-    _marksController.dispose();
+    promptController.dispose();
+    countController.dispose();
+    marksController.dispose();
     super.dispose();
   }
 
-  // ================= PICK FILE =================
+  String _getCourseTitle(BuildContext context) {
+    final courses = context.read<CourseProvider>().courses;
+    try {
+      return courses.firstWhere((c) => c.id == widget.courseId).title;
+    } catch (e) {
+      return "Unknown Subject";
+    }
+  }
+
+  int _calculateTotal() {
+    int count = int.tryParse(countController.text) ?? 10;
+    int marks = int.tryParse(marksController.text) ?? 1;
+    return count * marks;
+  }
 
   Future<void> _pickFile() async {
-    try {
-
-      final result =
-          await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: [
-          'pdf',
-          'jpg',
-          'jpeg',
-          'png',
-        ],
-      );
-
-      if (result == null) return;
-
-      final file =
-          File(result.files.single.path!);
-
-      setState(() {
-        _selectedFile = file;
-      });
-
-    } catch (e) {
-      _showMessage(
-        "Failed to pick file",
-      );
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'txt', 'docx'],
+    );
+    if (result != null && result.files.single.path != null) {
+      setState(() => pdfFile = File(result.files.single.path!));
     }
   }
-
-  // ================= GENERATE QUIZ =================
 
   Future<void> _generateQuiz() async {
-
-    final prompt =
-        _promptController.text.trim();
-
-    if (prompt.isEmpty) {
-      _showMessage(
-        "Prompt is required",
-      );
+    if (pdfFile == null && promptController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error: Please provide a Topic OR attach a Reference Document!"), backgroundColor: Colors.red));
       return;
     }
 
-    if (_selectedFile == null) {
-      _showMessage(
-        "Please upload PDF or image",
-      );
-      return;
+    final quizProvider = context.read<QuizProvider>();
+    final String currentCourseTitle = _getCourseTitle(context);
+
+    String finalPrompt = promptController.text.trim();
+    if (finalPrompt.isEmpty) {
+      finalPrompt = "Generate MCQs for: $currentCourseTitle";
     }
 
-    final provider =
-        Provider.of<QuizProvider>(
-      context,
-      listen: false,
-    );
-
-    final result =
-        await provider.createAIMCQQuiz(
-
-      // ✅ COURSE
+    // 🔥 FIX: Removed courseTitle, fixed file parameter safely
+    final result = await quizProvider.createAIMCQQuiz(
       courseId: widget.courseId,
-
-      // ✅ PROMPT
-      prompt: prompt,
-
-      // ✅ SETTINGS
-      difficulty: _difficulty,
-
-      questionCount:
-          int.tryParse(
-                _questionCountController.text,
-              ) ??
-              10,
-
-      marksPerQuestion:
-          int.tryParse(
-                _marksController.text,
-              ) ??
-              1,
-
-      // ✅ FILE
-      file: _selectedFile!,
+      prompt: finalPrompt,
+      difficulty: difficulty.toLowerCase(),
+      questionCount: int.tryParse(countController.text) ?? 10,
+      marksPerQuestion: int.tryParse(marksController.text) ?? 1,
+      file: pdfFile,
     );
 
-    if (!mounted) return;
-
-    if (result != null) {
-
-      _showMessage(
-        "AI MCQ Quiz Created Successfully",
-      );
-
-      Navigator.pop(context, true);
-
-    } else {
-
-      _showMessage(
-        provider.error ??
-            "Failed to generate quiz",
-      );
+    if (result != null && mounted) {
+      await quizProvider.fetchQuizzes(widget.courseId); // Auto refresh
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("AI MCQ Quiz Created Successfully! 🎉"), backgroundColor: Colors.green));
+      Navigator.pop(context);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(quizProvider.error ?? "Failed to create AI Quiz"), backgroundColor: Colors.red));
     }
-  }
-
-  // ================= MESSAGE =================
-
-  void _showMessage(String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-
-    final provider =
-        context.watch<QuizProvider>();
+    final quizProvider = context.watch<QuizProvider>();
+    final String courseTitle = _getCourseTitle(context);
 
     return Scaffold(
-
-      backgroundColor:
-          Colors.white,
-
+      backgroundColor: Colors.white,
       appBar: AppBar(
+        title: Text("AI MCQ - ${widget.quizTitle}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        backgroundColor: const Color(0xFF4F46E5),
         elevation: 0,
-        backgroundColor: Colors.white,
-
-        title: const Text(
-          "AI MCQ Quiz",
-          style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-
-        iconTheme: const IconThemeData(
-          color: Colors.black,
-        ),
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
-
       body: SingleChildScrollView(
-        padding:
-            const EdgeInsets.all(20),
-
+        padding: const EdgeInsets.all(24),
         child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
-
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-
-            // ================= COURSE =================
-
             Container(
-              width: double.infinity,
-
-              padding:
-                  const EdgeInsets.all(16),
-
-              decoration: BoxDecoration(
-                color: Colors.white,
-
-                borderRadius:
-                    BorderRadius.circular(18),
-
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black
-                        .withValues(alpha: 0.05),
-
-                    blurRadius: 10,
-
-                    offset:
-                        const Offset(0, 5),
-                  ),
-                ],
-              ),
-
-              child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
-
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: const Color(0xFF4F46E5).withOpacity(0.05), borderRadius: BorderRadius.circular(12)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-
-                  const Text(
-                    "Course",
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey,
-                    ),
-                  ),
-
-                  const SizedBox(height: 6),
-
-                  Text(
-                    widget.quizTitle,
-
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight:
-                          FontWeight.w700,
-                    ),
-                  ),
+                  const Text("Total Exam Marks:", style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text("${_calculateTotal()}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Color(0xFF4F46E5))),
                 ],
               ),
             ),
-
-            const SizedBox(height: 24),
-
-            // ================= FILE PICKER =================
-
-            const Text(
-              "Upload PDF / Image",
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
+            const SizedBox(height: 20),
+            TextFormField(
+              initialValue: courseTitle,
+              readOnly: true,
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF4F46E5)),
+              decoration: InputDecoration(
+                  labelText: "Locked Subject Domain",
+                  prefixIcon: const Icon(Icons.school, color: Color(0xFF4F46E5)),
+                  filled: true,
+                  fillColor: const Color(0xFF4F46E5).withOpacity(0.05),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: const Color(0xFF4F46E5).withOpacity(0.3)))
               ),
             ),
-
-            const SizedBox(height: 10),
-
+            const SizedBox(height: 20),
+            TextField(
+                controller: promptController,
+                decoration: InputDecoration(
+                    labelText: "Topic Focus / Prompt Instructions",
+                    hintText: "e.g., Polymorphism and Inheritance",
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))
+                )
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(child: TextField(controller: countController, keyboardType: TextInputType.number, onChanged: (_) => setState((){}), decoration: InputDecoration(labelText: "Questions Count", border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))))),
+                const SizedBox(width: 12),
+                Expanded(child: TextField(controller: marksController, keyboardType: TextInputType.number, onChanged: (_) => setState((){}), decoration: InputDecoration(labelText: "Marks Per MCQ", border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))))),
+              ],
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: difficulty,
+              decoration: InputDecoration(labelText: "Difficulty Level", border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
+              items: ["Easy", "Medium", "Hard"].map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
+              onChanged: (val) => setState(() => difficulty = val ?? "Medium"),
+            ),
+            const SizedBox(height: 24),
             GestureDetector(
               onTap: _pickFile,
-
               child: Container(
-                width: double.infinity,
-
-                padding:
-                    const EdgeInsets.all(18),
-
-                decoration: BoxDecoration(
-                  color: Colors.white,
-
-                  borderRadius:
-                      BorderRadius.circular(16),
-
-                  border: Border.all(
-                    color: Colors.grey.shade300,
-                  ),
-                ),
-
+                width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 16),
+                decoration: BoxDecoration(color: pdfFile != null ? Colors.green.shade50 : Colors.grey.shade50, borderRadius: BorderRadius.circular(10), border: Border.all(color: pdfFile != null ? Colors.green : Colors.grey.shade300)),
                 child: Column(
                   children: [
-
-                    const Icon(
-                      Icons.upload_file,
-                      size: 40,
-                      color: Color(0xFF4F46E5),
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    Text(
-                      _selectedFile == null
-                          ? "Tap to upload PDF or image"
-                          : _selectedFile!.path
-                              .split("/")
-                              .last,
-
-                      textAlign: TextAlign.center,
-
-                      style: TextStyle(
-                        color:
-                            _selectedFile == null
-                                ? Colors.grey
-                                : Colors.black,
-
-                        fontWeight:
-                            FontWeight.w500,
-                      ),
-                    ),
+                    Icon(pdfFile != null ? Icons.check_circle : Icons.upload_file, color: pdfFile != null ? Colors.green : Colors.grey),
+                    const SizedBox(height: 8),
+                    Text(pdfFile != null ? pdfFile!.path.split('/').last : "Upload Reference Book / Document", style: TextStyle(color: pdfFile != null ? Colors.green : Colors.black87, fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
             ),
-
-            const SizedBox(height: 24),
-
-            // ================= PROMPT =================
-
-            const Text(
-              "AI Prompt",
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            
-            const SizedBox(height: 10),
-
-            TextField(
-              controller: _promptController,
-
-              maxLines: 5,
-
-              decoration: InputDecoration(
-                hintText:
-                    "Example:\nGenerate conceptual MCQS from uploaded PDF.\nFocus on important university exam concepts.",
-
-                filled: true,
-                fillColor: Colors.white,
-
-                border:
-                    OutlineInputBorder(
-                  borderRadius:
-                      BorderRadius.circular(14),
-
-                  borderSide:
-                      BorderSide.none,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // ================= DIFFICULTY =================
-
-            const Text(
-              "Difficulty",
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(
-                horizontal: 16,
-              ),
-
-              decoration: BoxDecoration(
-                color: Colors.white,
-
-                borderRadius:
-                    BorderRadius.circular(14),
-              ),
-
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _difficulty,
-
-                  isExpanded: true,
-
-                  items: const [
-
-                    DropdownMenuItem(
-                      value: "easy",
-                      child: Text("Easy"),
-                    ),
-
-                    DropdownMenuItem(
-                      value: "medium",
-                      child: Text("Medium"),
-                    ),
-
-                    DropdownMenuItem(
-                      value: "hard",
-                      child: Text("Hard"),
-                    ),
-                  ],
-
-                  onChanged: (value) {
-
-                    if (value == null) return;
-
-                    setState(() {
-                      _difficulty = value;
-                    });
-                  },
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // ================= QUESTION COUNT =================
-
-            const Text(
-              "Question Count",
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            TextField(
-              controller:
-                  _questionCountController,
-
-              keyboardType:
-                  TextInputType.number,
-
-              decoration: InputDecoration(
-                hintText:
-                    "Enter question count",
-
-                filled: true,
-                fillColor: Colors.white,
-
-                border:
-                    OutlineInputBorder(
-                  borderRadius:
-                      BorderRadius.circular(14),
-
-                  borderSide:
-                      BorderSide.none,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // ================= MARKS =================
-
-            const Text(
-              "Marks Per Question",
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            TextField(
-              controller: _marksController,
-
-              keyboardType:
-                  TextInputType.number,
-
-              decoration: InputDecoration(
-                hintText:
-                    "Enter marks",
-
-                filled: true,
-                fillColor: Colors.white,
-
-                border:
-                    OutlineInputBorder(
-                  borderRadius:
-                      BorderRadius.circular(14),
-
-                  borderSide:
-                      BorderSide.none,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 35),
-
-            // ================= BUTTON =================
-
+            const SizedBox(height: 30),
             SizedBox(
               width: double.infinity,
               height: 55,
-
               child: ElevatedButton(
-
-                onPressed:
-                    provider.isGeneratingAI
-                        ? null
-                        : _generateQuiz,
-
-                style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      const Color(
-                    0xFF4F46E5,
-                  ),
-
-                  shape:
-                      RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(
-                      16,
-                    ),
-                  ),
-                ),
-
-                child:
-                    provider.isGeneratingAI
-                        ? const SizedBox(
-                            height: 22,
-                            width: 22,
-
-                            child:
-                                CircularProgressIndicator(
-                              color:
-                                  Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text(
-                            "Generate AI MCQ Quiz",
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight:
-                                  FontWeight
-                                      .w600,
-                            ),
-                          ),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4F46E5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                onPressed: quizProvider.isLoading || quizProvider.isGeneratingAI ? null : _generateQuiz,
+                child: quizProvider.isGeneratingAI
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text("Generate AI Exam Sheet", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
               ),
-            ),
+            )
           ],
         ),
       ),

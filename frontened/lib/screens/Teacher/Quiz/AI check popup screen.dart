@@ -4,11 +4,11 @@ import 'package:frontened/main.dart' show AppColors;
 
 class TeacherQuizUploadProcessingScreen extends StatefulWidget {
   static const String quizUploadProcessing = '/quiz-upload-processing';
-  
+
   const TeacherQuizUploadProcessingScreen({super.key});
 
   @override
- State<TeacherQuizUploadProcessingScreen> createState() =>
+  State<TeacherQuizUploadProcessingScreen> createState() =>
       _TeacherQuizUploadProcessingScreenState();
 }
 
@@ -112,9 +112,9 @@ class _TeacherQuizUploadProcessingScreenState
               value: progress,
               minHeight: 8,
               backgroundColor:
-                  AppColors.primary.withValues(alpha: 0.15),
+              AppColors.primary.withValues(alpha: 0.15),
               valueColor:
-                  const AlwaysStoppedAnimation(AppColors.primary),
+              const AlwaysStoppedAnimation(AppColors.primary),
             ),
           ),
 
@@ -158,7 +158,7 @@ class _TeacherQuizUploadProcessingScreenState
             padding: const EdgeInsets.all(14),
             decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              color: AppColors.success,
+              color: Colors.green, // 🔥 Yahan error tha, isay fix kar diya hai
             ),
             child: const Icon(
               Icons.check,

@@ -1,16 +1,7 @@
-// ================================
-// question_model.dart
-// ================================
-
 class Question {
   final String question;
-
-  // MCQ ONLY
   final Map<String, String>? options;
-
-  // nullable for printable AI exams
   final String? correctAnswer;
-
   final int marks;
 
   Question({
@@ -23,13 +14,8 @@ class Question {
   factory Question.fromJson(Map<String, dynamic> json) {
     return Question(
       question: json['question'] ?? '',
-
-      options: json['options'] != null
-          ? Map<String, String>.from(json['options'])
-          : null,
-
-      correctAnswer: json['correctAnswer'],
-
+      options: json['options'] != null ? Map<String, String>.from(json['options']) : null,
+      correctAnswer: json['correctAnswer']?.toString(),
       marks: json['marks'] ?? 1,
     );
   }

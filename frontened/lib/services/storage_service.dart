@@ -1,58 +1,59 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 class StorageService {
+  static const String _tokenKey = "auth_token";
+  static const String _roleKey = "user_role";
+  static const String _loginTimeKey = "login_time";
 
-  // ✅ SAVE TOKEN + ROLE + LOGIN TIME
-  static Future<void> saveToken(String token, String role) async {
+  // ✅ SAVE TOKEN + ROLE + TIME
+  static Future<void> saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString("token", token);
-    await prefs.setString("role", role);
-
-    // 🔥 Login hote hi current time save karein
-    await prefs.setInt("login_time", DateTime.now().millisecondsSinceEpoch);
+    await prefs.setString(_tokenKey, token);
+    await prefs.setInt(_loginTimeKey, DateTime.now().millisecondsSinceEpoch);
   }
 
   static Future<void> saveRole(String role) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString("role", role);
+    await prefs.setString(_roleKey, role.toLowerCase());
   }
 
-  // ✅ GET TOKEN
+  // ✅ GETTERS
   static Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString("token");
+    return prefs.getString(_tokenKey);
   }
 
-  // ✅ GET ROLE
   static Future<String?> getRole() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString("role");
+    return prefs.getString(_roleKey);
   }
 
-  // 🔥 CHECK IF SESSION IS EXPIRED (e.g., 24 Hours)
+  // ✅ SESSION EXPIRY CHECK (UX Friendly)
   static Future<bool> isSessionExpired() async {
     final prefs = await SharedPreferences.getInstance();
-    final loginTime = prefs.getInt("login_time");
+    final loginTime = prefs.getInt(_loginTimeKey);
 
-    if (loginTime == null) return true; // Agar time nahi mila to matlab expired ya logged out hai
+    if (loginTime == null) return true;
 
     final now = DateTime.now().millisecondsSinceEpoch;
     final difference = now - loginTime;
 
-    // Testing ke liye 30 seconds set hai
-    const int sessionDuration = 259200000;
-
-    if (difference > sessionDuration) {
-      return true; // Session expire ho gayi hai
-    }
-    return false; // Session abhi valid hai
+    const int sessionDuration = 259200000; // Example: 3 Days
+    return difference > sessionDuration;
   }
 
-  // ✅ ONLY CLEAR TOKEN & TIME (ROLE IS PRESERVED FOR UX) 🔥
+  // ✅ LOGOUT ACTIONS
   static Future<void> removeToken() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove("token");
-    // ❌ Yahan se role remove karne wali line mita di hai taake login screen yaad rahe
-    await prefs.remove("login_time");
+    await prefs.remove(_tokenKey);
+    await prefs.remove(_loginTimeKey);
+    // Role is intentionally kept to remember user selection on the login screen
+  }
+
+  static Future<void> clearAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tokenKey);
+    await prefs.remove(_roleKey);
+    await prefs.remove(_loginTimeKey);
   }
 }

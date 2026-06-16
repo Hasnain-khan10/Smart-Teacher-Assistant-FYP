@@ -2,338 +2,185 @@ import 'package:flutter/material.dart';
 import 'package:frontened/models/Quiz/quiz_model.dart';
 import 'package:frontened/screens/Student/Main_Screen.dart';
 
-class QuizResultScreen extends StatefulWidget {
+class QuizResultScreen extends StatelessWidget {
   const QuizResultScreen({super.key});
-
   static const String routeName = '/quiz-result';
 
   @override
-  State<QuizResultScreen> createState() => _QuizResultScreenState();
-}
-
-class _QuizResultScreenState extends State<QuizResultScreen> {
-  
-  @override
   Widget build(BuildContext context) {
     final args = ModalRoute.of(context)!.settings.arguments;
-
     int score = 0;
     int total = 0;
     List review = [];
 
+    // Case 1: Agar data Map mein aa raha hai
     if (args is Map) {
-      score = args['score'] ?? 0;
-      total = args['total'] ?? 0;
+      score = (args['score'] ?? 0).toInt();
+      total = (args['total'] ?? 0).toInt();
       review = args['review'] ?? [];
-    } else if (args is Quiz) {
-      score = args.score ?? 0;
-      total = args.total ?? args.questions.length;
+    }
+    // Case 2: Agar pura Quiz Model object aa raha hai
+    else if (args is Quiz) {
+      score = (args.score ?? 0).toInt();
+      total = (args.totalMarks ?? args.questions.length).toInt();
 
-      review = args.selectedAnswers.asMap().entries.map((e) {
-            return {
-              "question": args.questions[e.key].question,
-              "selectedAnswer": e.value ?? "",
-              "correctAnswer": args.questions[e.key].correctAnswer,
-              "isCorrect": e.value == args.questions[e.key].correctAnswer,
-            };
-          }).toList() ??
-          [];
+      // ✅ Yahan hum Questions aur Answers ko combine kar rahe hain
+      review = (args.selectedAnswers ?? []).asMap().entries.map((e) {
+        int index = e.key;
+        var ans = e.value; // Yeh student ka answer hai
+        var q = args.questions[index]; // Yeh question object hai
+
+        return {
+          "question": q.question,
+          "selectedAnswer": ans["selectedAnswer"] ?? "",
+          "correctAnswer": q.correctAnswer,
+          "isCorrect": ans["selectedAnswer"] == q.correctAnswer,
+        };
+      }).toList();
     }
 
+    // Logic for Summary Stats
     final correct = review.where((e) => e['isCorrect'] == true).length;
-
-    final wrong = review.where((e) =>
-        e['isCorrect'] == false && (e['selectedAnswer'] ?? '') != "").length;
-
-    final skipped = review
-        .where((e) => (e['selectedAnswer'] ?? '') == "" || e['selectedAnswer'] == null)
-        .length;
+    final wrong = review.where((e) => e['isCorrect'] == false && (e['selectedAnswer'] ?? '') != "").length;
+    final skipped = review.where((e) => (e['selectedAnswer'] ?? '') == "" || e['selectedAnswer'] == null).length;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        backgroundColor: AppColors.background,
         elevation: 0,
+        backgroundColor: const Color(0xFF4F46E5),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-          onPressed: () => Navigator.pushNamedAndRemoveUntil(
-          context,
-          MainScreen.routeName,
-         (route) => false,
-         ),
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () => Navigator.pushNamedAndRemoveUntil(context, MainScreen.routeName, (route) => false),
         ),
-        title: const Text(
-          "Quiz Result",
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        centerTitle: true,
+        title: const Text("Evaluation Report", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
-
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          children: [
-            const SizedBox(height: 20),
-
-            /// SCORE CARD
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.primary, AppColors.secondary],
-                ),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Column(
-                children: [
-                  const Text(
-                    "Your Score",
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    "$score / $total",
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 32,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
+      body: Column(
+        children: [
+          // HEADER SCORE
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 30),
+            width: double.infinity,
+            decoration: const BoxDecoration(
+              color: Color(0xFF4F46E5),
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
             ),
-
-            const SizedBox(height: 20),
-
-            /// SUMMARY
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Column(
               children: [
-                ResultBox(
-                  title: "Correct",
-                  value: "$correct",
-                  color: AppColors.success,
-                ),
-                ResultBox(
-                  title: "Wrong",
-                  value: "$wrong",
-                  color: AppColors.error,
-                ),
-                ResultBox(
-                  title: "Skipped",
-                  value: "$skipped",
-                  color: AppColors.warning,
-                ),
+                const Text("Total Score Achieved", style: TextStyle(color: Colors.white70, fontSize: 16)),
+                const SizedBox(height: 8),
+                Text("$score / $total", style: const TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold)),
               ],
             ),
+          ),
+          const SizedBox(height: 20),
 
-            const SizedBox(height: 20),
+          // SUMMARY CARDS
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                _statCard("Correct", correct, Colors.green),
+                const SizedBox(width: 12),
+                _statCard("Wrong", wrong, Colors.red),
+                const SizedBox(width: 12),
+                _statCard("Skipped", skipped, Colors.orange),
+              ],
+            ),
+          ),
 
-            const Align(
+          const SizedBox(height: 20),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: Align(
               alignment: Alignment.centerLeft,
-              child: Text(
-                "Review Answers",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
-              ),
+              child: Text("Detailed Breakdown", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
             ),
+          ),
+          const SizedBox(height: 10),
 
-            const SizedBox(height: 12),
+          // LIST OF Q/A
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: review.length,
+              itemBuilder: (context, index) {
+                final item = review[index];
+                final isSkipped = (item['selectedAnswer'] ?? '') == "";
+                final isCorrect = item['isCorrect'] ?? false;
 
-            Expanded(
-              child: review.isEmpty
-                  ? const Center(child: Text("No review available"))
-                  : ListView.builder(
-                      itemCount: review.length,
-                      itemBuilder: (context, index) {
-                        final item = review[index];
-
-                        final isSkipped =
-                            (item['selectedAnswer'] ?? '') == "";
-
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: AnswerReviewCard(
-                            question: item['question'] ?? '',
-                            userAnswer: item['selectedAnswer'] ?? '',
-                            correctAnswer: item['correctAnswer'] ?? '',
-                            isCorrect: item['isCorrect'] ?? false,
-                            isSkipped: isSkipped,
-                          ),
-                        );
-                      },
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isSkipped ? Colors.orange.shade200 : (isCorrect ? Colors.green.shade200 : Colors.red.shade200),
                     ),
-            ),
-
-            /// BUTTON
-            GestureDetector(
-              onTap: () {
-                Navigator.pushNamed(context, '/quiz-tips');
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Q${index + 1}. ${item['question']}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      const Divider(height: 20),
+                      Text(
+                        isSkipped ? "Skipped" : "Your Answer: ${item['selectedAnswer']}",
+                        style: TextStyle(
+                          color: isSkipped ? Colors.orange : (isCorrect ? Colors.green : Colors.red),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (!isCorrect && !isSkipped)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text("Correct Answer: ${item['correctAnswer']}", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                        ),
+                    ],
+                  ),
+                );
               },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                margin: const EdgeInsets.only(bottom: 20),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppColors.primary, AppColors.secondary],
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Center(
-                  child: Text(
-                    "View AI Feedback",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+            ),
+          ),
+
+          // AI FEEDBACK BUTTON
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: SizedBox(
+              width: double.infinity,
+              height: 55,
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.pushNamed(context, '/quiz-tips'),
+                icon: const Icon(Icons.auto_awesome, color: Colors.white),
+                label: const Text("View AI Feedback", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF7C3AED),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// ================= RESULT BOX =================
-class ResultBox extends StatelessWidget {
-  final String title;
-  final String value;
-  final Color color;
-
-  const ResultBox({
-    super.key,
-    required this.title,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            )
-          ],
-        ),
-        child: Column(
-          children: [
-            Text(
-              value,
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 18,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: const TextStyle(color: AppColors.textSecondary),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// ================= ANSWER CARD (UPGRADED) =================
-class AnswerReviewCard extends StatelessWidget {
-  final String question;
-  final String userAnswer;
-  final String correctAnswer;
-  final bool isCorrect;
-  final bool isSkipped;
-
-  const AnswerReviewCard({
-    super.key,
-    required this.question,
-    required this.userAnswer,
-    required this.correctAnswer,
-    required this.isCorrect,
-    this.isSkipped = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    Color borderColor;
-    Color textColor;
-
-    if (isSkipped) {
-      borderColor = AppColors.warning;
-      textColor = AppColors.warning;
-    } else if (isCorrect) {
-      borderColor = AppColors.success;
-      textColor = AppColors.success;
-    } else {
-      borderColor = AppColors.error;
-      textColor = AppColors.error;
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            question,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            isSkipped
-                ? "Skipped"
-                : "Your Answer: $userAnswer",
-            style: TextStyle(color: textColor),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            "Correct Answer: $correctAnswer",
-            style: const TextStyle(color: AppColors.textSecondary),
-          ),
+          )
         ],
       ),
     );
   }
-}
 
-/// ================= COLORS =================
-class AppColors {
-  static const Color primary = Color(0xFF4F46E5);
-  static const Color secondary = Color(0xFF7C3AED);
-  static const Color background = Colors.white;
-  static const Color surface = Colors.white;
-  static const Color textPrimary = Color(0xFF1E1B4B);
-  static const Color textSecondary = Color(0xFF6B7280);
-  static const Color success = Color(0xFF22C55E);
-  static const Color error = Color(0xFFEF4444);
-  static const Color warning = Color(0xFFF59E0B);
+  Widget _statCard(String title, int value, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Column(
+          children: [
+            Text("$value", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color)),
+            Text(title, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
 }

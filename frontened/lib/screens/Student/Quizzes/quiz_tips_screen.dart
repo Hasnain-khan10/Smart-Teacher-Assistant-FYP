@@ -2,116 +2,58 @@ import 'package:flutter/material.dart';
 
 class QuizTipsScreen extends StatelessWidget {
   const QuizTipsScreen({super.key});
-
   static const String routeName = '/quiz-tips';
 
   @override
   Widget build(BuildContext context) {
+    // In future, you can pass actual dynamic AI feedback string via arguments here.
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          "AI Feedback",
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        centerTitle: true,
+        elevation: 0, backgroundColor: const Color(0xFF4F46E5),
+        title: const Text("AI Performance Review", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 10),
-
-            /// Header Card (AI style)
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.primary, AppColors.secondary],
-                ),
-                borderRadius: BorderRadius.circular(18),
-              ),
+              width: double.infinity, padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF7C3AED), Color(0xFF4F46E5)]), borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: const Color(0xFF7C3AED).withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 5))]),
               child: Row(
-                children: const [
-                  Icon(Icons.auto_awesome, color: Colors.white),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      "AI Suggestions to Improve Your Performance",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
+                children: [
+                  Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), shape: BoxShape.circle), child: const Icon(Icons.auto_awesome, color: Colors.white, size: 30)),
+                  const SizedBox(width: 16),
+                  const Expanded(child: Text("Based on your answers, AI has generated personalized tips to help you improve.", style: TextStyle(color: Colors.white, fontSize: 15, height: 1.4))),
                 ],
               ),
             ),
+            const SizedBox(height: 30),
+            const Text("Actionable Insights", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
+            const SizedBox(height: 16),
 
-            const SizedBox(height: 20),
-
-            /// Tips List
             Expanded(
               child: ListView(
                 children: const [
-                  TipCard(
-                    title: "Focus on Binary Search",
-                    description:
-                        "You answered incorrectly in complexity questions. Revise O(log n) concepts.",
-                  ),
+                  TipCard(title: "Concept Clarity Required", description: "You answered incorrectly in Core Programming questions. Consider revising Object-Oriented concepts."),
                   SizedBox(height: 12),
-                  TipCard(
-                    title: "Revise Data Structures Basics",
-                    description:
-                        "Strengthen your understanding of stacks and queues.",
-                  ),
+                  TipCard(title: "Time Management", description: "You skipped a few questions. Try to allocate a maximum of 45 seconds per MCQ."),
                   SizedBox(height: 12),
-                  TipCard(
-                    title: "Practice More MCQs",
-                    description:
-                        "Attempt more quizzes to improve speed and accuracy.",
-                  ),
+                  TipCard(title: "Strength Identified", description: "Great job on Database concepts! Your accuracy in that section was 100%."),
                 ],
               ),
             ),
 
-            /// Done Button
-            GestureDetector(
-              onTap: () {
-                Navigator.pop(context);
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                margin: const EdgeInsets.only(bottom: 20),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppColors.primary, AppColors.secondary],
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Center(
-                  child: Text(
-                    "Back to Result",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+            SizedBox(
+              width: double.infinity, height: 55,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4F46E5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                child: const Text("Back to Results", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
               ),
-            ),
+            )
           ],
         ),
       ),
@@ -120,56 +62,26 @@ class QuizTipsScreen extends StatelessWidget {
 }
 
 class TipCard extends StatelessWidget {
-  final String title;
-  final String description;
-
-  const TipCard({
-    super.key,
-    required this.title,
-    required this.description,
-  });
+  final String title; final String description;
+  const TipCard({super.key, required this.title, required this.description});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          )
-        ],
-      ),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            Icons.lightbulb,
-            color: AppColors.secondary,
-          ),
-          const SizedBox(width: 10),
+          const Icon(Icons.lightbulb_outline, color: Color(0xFFF59E0B), size: 28),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                  ),
-                ),
+                Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E1B4B))),
+                const SizedBox(height: 6),
+                Text(description, style: const TextStyle(color: Colors.grey, height: 1.4)),
               ],
             ),
           ),
@@ -177,13 +89,4 @@ class TipCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class AppColors {
-  static const Color primary = Color(0xFF4F46E5);
-  static const Color secondary = Color(0xFF7C3AED);
-  static const Color background = Colors.white;
-  static const Color surface = Colors.white;
-  static const Color textPrimary = Color(0xFF1E1B4B);
-  static const Color textSecondary = Color(0xFF6B7280);
 }

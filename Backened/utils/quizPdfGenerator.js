@@ -5,152 +5,101 @@ exports.generateQuizPDF = (data, filePath) => {
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({ margin: 50 });
-
       const stream = fs.createWriteStream(filePath);
       doc.pipe(stream);
 
-      // 🧠 BASIC INFO
-      const title = data?.title || "Exam Paper";
-      const description = data?.description || "";
-
-      // 📄 HEADER
-      doc.fontSize(20).text(title, { align: "center" });
-      doc.moveDown();
-
-      doc.fontSize(12).text(description);
+      // ============================================
+      // PART 1: STUDENT QUESTION PAPER
+      // ============================================
+      doc.fontSize(22).font("Helvetica-Bold").text(data.title || "Examination Paper", { align: "center" });
+      doc.moveDown(0.5);
+      doc.fontSize(12).font("Helvetica").text(data.description || "", { align: "center" });
       doc.moveDown(2);
 
-      // =========================
-      // 🟢 MCQ SECTION (UPDATED WITH MARKS)
-      // =========================
-      if (data.questions?.[0]?.options) {
-
+      // 1. MCQ Section
+      if (data.questions && data.questions.length > 0) {
         const perMark = data?.examMeta?.marksPerQuestion || 1;
-        const totalMarks = data?.examMeta?.totalMarks || 0;
-
-        doc.fontSize(14).text("MCQ EXAM PAPER:");
+        doc.fontSize(16).font("Helvetica-Bold").text("SECTION A: Multiple Choice Questions");
         doc.moveDown();
 
         data.questions.forEach((q, index) => {
-          if (!q?.question) return;
-
-          doc.fontSize(12).text(
-            `${index + 1}. ${q.question} (${perMark} Marks)`
-          );
-          doc.moveDown(0.5);
-
+          doc.fontSize(12).font("Helvetica-Bold").text(`Q${index + 1}. ${q.question} (${q.marks || perMark} Marks)`);
+          doc.font("Helvetica").moveDown(0.5);
           doc.text(`A. ${q.options?.A || ""}`);
           doc.text(`B. ${q.options?.B || ""}`);
           doc.text(`C. ${q.options?.C || ""}`);
           doc.text(`D. ${q.options?.D || ""}`);
-
           doc.moveDown(1);
         });
-
-        // ✅ TOTAL MARKS
-        doc.moveDown(2);
-        doc.fontSize(14).text(`Total Marks: ${totalMarks}`);
       }
 
-      // =========================
-      // 🟡 BOTH (SHORT + LONG)
-      // =========================
-      else if (data.shortQuestions || data.longQuestions) {
-
-        let grandTotal = 0;
-
-        // SHORT SECTION
-        if (Array.isArray(data.shortQuestions)) {
-          doc.fontSize(14).text("SHORT QUESTIONS:");
-          doc.moveDown();
-
-          data.shortQuestions.forEach((q, index) => {
-            if (!q?.question) return;
-
-            doc.fontSize(12).text(
-              `${index + 1}. ${q.question} (${q.marks || 0} Marks)`
-            );
-
-            grandTotal += q.marks || 0;
-            doc.moveDown();
-          });
-
-          if (data.shortTotalMarks) {
-            doc.moveDown();
-            doc.text(`Short Section Total: ${data.shortTotalMarks}`);
-          }
-
-          doc.moveDown(1);
-        }
-
-        // LONG SECTION
-        if (Array.isArray(data.longQuestions)) {
-          doc.fontSize(14).text("LONG QUESTIONS:");
-          doc.moveDown();
-
-          data.longQuestions.forEach((q, index) => {
-            if (!q?.question) return;
-
-            doc.fontSize(12).text(
-              `${index + 1}. ${q.question} (${q.marks || 0} Marks)`
-            );
-
-            grandTotal += q.marks || 0;
-            doc.moveDown();
-          });
-
-          if (data.longTotalMarks) {
-            doc.moveDown();
-            doc.text(`Long Section Total: ${data.longTotalMarks}`);
-          }
-        }
-
-        // GRAND TOTAL
-        doc.moveDown(2);
-        doc.fontSize(14).text(
-          `Grand Total Marks: ${data.grandTotalMarks || grandTotal}`
-        );
-      }
-
-      // =========================
-      // 🟣 SINGLE (SHORT / LONG)
-      // =========================
-      else if (Array.isArray(data.questions)) {
-
-        let total = 0;
-
-        doc.fontSize(14).text("EXAM QUESTIONS:");
+      // 2. Short Questions Section
+      if (data.shortQuestions && data.shortQuestions.length > 0) {
+        doc.fontSize(16).font("Helvetica-Bold").text("SECTION B: Short Answer Questions");
         doc.moveDown();
-
-        data.questions.forEach((q, index) => {
-          if (!q?.question) return;
-
-          const marks = q.marks || 0;
-          total += marks;
-
-          doc.fontSize(12).text(
-            `${index + 1}. ${q.question} (${marks} Marks)`
-          );
-
-          doc.moveDown();
+        data.shortQuestions.forEach((q, index) => {
+          doc.fontSize(12).font("Helvetica-Bold").text(`Q${index + 1}. ${q.question} (${q.marks} Marks)`);
+          doc.moveDown(2); // Leave space for writing
         });
-
-        doc.moveDown(1);
-        doc.fontSize(12).text(`Total Marks: ${data.totalMarks || total}`);
       }
 
-      // =========================
-      // ❌ EMPTY CASE
-      // =========================
-      else {
-        doc.fontSize(12).text("No questions available.");
+      // 3. Long Questions Section
+      if (data.longQuestions && data.longQuestions.length > 0) {
+        doc.fontSize(16).font("Helvetica-Bold").text("SECTION C: Long Descriptive Questions");
+        doc.moveDown();
+        data.longQuestions.forEach((q, index) => {
+          doc.fontSize(12).font("Helvetica-Bold").text(`Q${index + 1}. ${q.question} (${q.marks} Marks)`);
+          doc.moveDown(4); // Leave more space
+        });
+      }
+
+      // ============================================
+      // PART 2: INSTRUCTOR ANSWER KEY (NEW PAGE)
+      // ============================================
+      doc.addPage();
+      doc.fontSize(20).font("Helvetica-Bold").fillColor("red").text("INSTRUCTOR ONLY - ANSWER KEY & RUBRIC", { align: "center" });
+      doc.fillColor("black").moveDown(2);
+
+      // MCQ Key
+      if (data.questions && data.questions.length > 0) {
+        doc.fontSize(16).font("Helvetica-Bold").text("MCQ Solutions & Rationale");
+        doc.moveDown(0.5);
+        data.questions.forEach((q, index) => {
+          doc.fontSize(12).font("Helvetica-Bold").text(`Q${index + 1}. Correct Answer: ${q.correctAnswer}`);
+          doc.font("Helvetica").text(`Rationale: ${q.explanation || "N/A"}`, { indent: 15 });
+          doc.moveDown(1);
+        });
+      }
+
+      // Subjective Key (Short)
+      if (data.shortQuestions && data.shortQuestions.length > 0) {
+        doc.fontSize(16).font("Helvetica-Bold").text("Short Questions - Grading Guide");
+        doc.moveDown(0.5);
+        data.shortQuestions.forEach((q, index) => {
+          doc.fontSize(12).font("Helvetica-Bold").text(`Q${index + 1}. Ideal Answer:`);
+          doc.font("Helvetica").text(q.idealAnswer || "N/A", { indent: 15 });
+          doc.font("Helvetica-Bold").text("Rubric: ");
+          doc.font("Helvetica").text(q.rubric || "N/A", { indent: 15 });
+          doc.moveDown(1);
+        });
+      }
+
+      // Subjective Key (Long)
+      if (data.longQuestions && data.longQuestions.length > 0) {
+        doc.fontSize(16).font("Helvetica-Bold").text("Long Questions - Grading Guide");
+        doc.moveDown(0.5);
+        data.longQuestions.forEach((q, index) => {
+          doc.fontSize(12).font("Helvetica-Bold").text(`Q${index + 1}. Ideal Answer:`);
+          doc.font("Helvetica").text(q.idealAnswer || "N/A", { indent: 15 });
+          doc.font("Helvetica-Bold").text("Rubric: ");
+          doc.font("Helvetica").text(q.rubric || "N/A", { indent: 15 });
+          doc.moveDown(1);
+        });
       }
 
       doc.end();
-
       stream.on("finish", () => resolve(filePath));
       stream.on("error", reject);
-
     } catch (error) {
       reject(error);
     }

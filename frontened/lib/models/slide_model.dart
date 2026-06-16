@@ -2,24 +2,16 @@ class SlideItem {
   final String title;
   final List<String> content;
 
-  SlideItem({
-    required this.title,
-    required this.content,
-  });
+  SlideItem({required this.title, required this.content});
 
   factory SlideItem.fromJson(Map<String, dynamic> json) {
     return SlideItem(
-      title: json['title'],
+      title: json['title'] ?? '',
       content: List<String>.from(json['content'] ?? []),
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      "title": title,
-      "content": content,
-    };
-  }
+  Map<String, dynamic> toJson() => {"title": title, "content": content};
 }
 
 class SlideModel {
@@ -28,38 +20,23 @@ class SlideModel {
   final String topic;
   final List<SlideItem> slides;
   final String? pptUrl;
-
-  // for student (populate teacher)
   final String? teacherName;
   final String? teacherEmail;
 
   SlideModel({
-    required this.id,
-    required this.courseId,
-    required this.topic,
-    required this.slides,
-    this.pptUrl,
-    this.teacherName,
-    this.teacherEmail,
+    required this.id, required this.courseId, required this.topic,
+    required this.slides, this.pptUrl, this.teacherName, this.teacherEmail,
   });
 
   factory SlideModel.fromJson(Map<String, dynamic> json) {
     return SlideModel(
-      id: json['_id'],
-      courseId: json['course'],
-      topic: json['topic'],
-      slides: List<SlideItem>.from(
-        json['slides'].map((s) => SlideItem.fromJson(s)),
-      ),
+      id: json['_id'] ?? '',
+      courseId: json['course'] ?? '',
+      topic: json['topic'] ?? '',
+      slides: (json['slides'] as List?)?.map((s) => SlideItem.fromJson(s)).toList() ?? [],
       pptUrl: json['pptUrl'],
-
-      teacherName: json['teacher'] is Map
-          ? json['teacher']['name']
-          : null,
-
-      teacherEmail: json['teacher'] is Map
-          ? json['teacher']['email']
-          : null,
+      teacherName: json['teacher'] is Map ? json['teacher']['name'] : null,
+      teacherEmail: json['teacher'] is Map ? json['teacher']['email'] : null,
     );
   }
 }

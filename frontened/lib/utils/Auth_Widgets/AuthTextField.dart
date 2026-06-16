@@ -1,10 +1,4 @@
-
 import 'package:flutter/material.dart';
-import 'package:frontened/main.dart';
-
-/// ------------------------------------------------------------
-/// TEXT FIELD
-/// ------------------------------------------------------------
 
 class AuthTextField extends StatelessWidget {
   final String hintText;
@@ -18,46 +12,56 @@ class AuthTextField extends StatelessWidget {
     super.key,
     required this.hintText,
     required this.icon,
-    this.controller,
     this.isPassword = false,
     this.obscureText = false,
     this.onToggle,
+    this.controller,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 58,
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
+        color: Colors.white, // Safe hardcoded white color
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: TextField(
         controller: controller,
-        obscureText: isPassword ? obscureText : false,
-        style: const TextStyle(
-          color: AppColors.textPrimary,
-          fontSize: 17,
-        ),
+        obscureText: obscureText,
+        style: const TextStyle(color: Colors.black87, fontSize: 16),
         decoration: InputDecoration(
-          border: InputBorder.none,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-          prefixIcon: Icon(icon, color: AppColors.textSecondary),
           hintText: hintText,
-          hintStyle: const TextStyle(
-            color: AppColors.textSecondary,
-          ),
+          hintStyle: const TextStyle(color: Colors.black45),
+          prefixIcon: Icon(icon, color: Colors.grey),
           suffixIcon: isPassword
-              ? GestureDetector(
-                  onTap: onToggle,
-                  child: const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text("Show"),
-                  ),
-                )
+              ? IconButton(
+            icon: Icon(
+              obscureText ? Icons.visibility_off : Icons.visibility,
+              color: Colors.grey,
+            ),
+            onPressed: onToggle,
+          )
               : null,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Color(0xFF4F46E5), width: 1.8), // Indigo focus border
+          ),
         ),
       ),
     );

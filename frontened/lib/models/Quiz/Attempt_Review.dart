@@ -1,14 +1,7 @@
-// ================================
-// attempt_review_model.dart
-// ================================
-
 class AttemptReview {
-
   final String question;
-
   final String? selectedAnswer;
   final String? correctAnswer;
-
   final bool isCorrect;
   final bool skipped;
 
@@ -23,13 +16,9 @@ class AttemptReview {
   factory AttemptReview.fromJson(Map<String, dynamic> json) {
     return AttemptReview(
       question: json['question'] ?? '',
-
-      selectedAnswer: json['selectedAnswer'],
-
-      correctAnswer: json['correctAnswer'],
-
+      selectedAnswer: json['selectedAnswer']?.toString(),
+      correctAnswer: json['correctAnswer']?.toString(),
       isCorrect: json['isCorrect'] ?? false,
-
       skipped: json['skipped'] ?? false,
     );
   }

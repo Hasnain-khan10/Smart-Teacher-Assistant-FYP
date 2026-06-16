@@ -108,9 +108,9 @@ class _TeacherAIQuizLoadingScreenState
               value: progress,
               minHeight: 8,
               backgroundColor:
-                  AppColors.primary.withValues(alpha: 0.15),
+              AppColors.primary.withValues(alpha: 0.15),
               valueColor:
-                  const AlwaysStoppedAnimation(AppColors.primary),
+              const AlwaysStoppedAnimation(AppColors.primary),
             ),
           ),
 
@@ -154,7 +154,7 @@ class _TeacherAIQuizLoadingScreenState
             padding: const EdgeInsets.all(14),
             decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              color: AppColors.success,
+              color: Colors.green, // 🔥 Yahan error tha, isay fix kar diya hai
             ),
             child: const Icon(
               Icons.check,

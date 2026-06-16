@@ -3,11 +3,10 @@ import 'package:frontened/Provider/auth_provider.dart';
 import 'package:frontened/Provider/course_provider.dart';
 import 'package:frontened/Provider/quiz_provider.dart';
 import 'package:provider/provider.dart';
-
+import 'Courses/JoinCourseScreen.dart'; // Make sure this path is correct
 
 class StudentHomeScreen extends StatefulWidget {
   const StudentHomeScreen({super.key});
-
   static const String routeName = '/student-home';
 
   @override
@@ -15,253 +14,112 @@ class StudentHomeScreen extends StatefulWidget {
 }
 
 class _StudentHomeScreenState extends State<StudentHomeScreen> {
-
-   @override
+  @override
   void initState() {
     super.initState();
-
-     Future.microtask(() {
-    context.read<QuizProvider>().fetchAllQuizzes();
-    context.read<CourseProvider>().fetchCourses(); 
-  });
-
-    _loadProfile();
+    Future.microtask(() {
+      context.read<QuizProvider>().fetchAllQuizzes();
+      context.read<CourseProvider>().fetchCourses();
+      context.read<AuthProvider>().loadProfile();
+    });
   }
 
-
-  Future<void> _loadProfile() async {
-    try {
-     await context
-                      .read<AuthProvider>()
-                      .loadProfile();
-    } catch (e) {
-      debugPrint(e.toString());
-    }
-   }
-
-   bool _isCompletedSafe(dynamic quiz) {
-    return quiz.isCompleted == true;
-  }
-
+  bool _isCompletedSafe(dynamic quiz) => quiz.isCompleted == true;
 
   @override
   Widget build(BuildContext context) {
     final quizProvider = context.watch<QuizProvider>();
-
     final authProvider = context.watch<AuthProvider>();
     final students = authProvider.user;
-
     final courseProvider = context.watch<CourseProvider>();
     final courses = courseProvider.courses;
 
-    final quizzes = quizProvider.quizzes;
-
-    final upcomingQuizzes =
-        quizzes.where((q) => !_isCompletedSafe(q)).toList();
+    final upcomingQuizzes = quizProvider.quizzes.where((q) => !_isCompletedSafe(q)).toList();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
-      bottomNavigationBar: const StudentBottomNavBar(),
+      backgroundColor: Colors.white,
+
+      // 🔥 THE DYNAMIC WAVE FLOATING BUTTON FOR "JOIN COURSE"
+      floatingActionButton: _AnimatedWaveButton(
+        onTap: () => Navigator.pushNamed(context, JoinCourseScreen.routeName),
+      ),
+
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 10),
-
-              /// Header
-Row(
-  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-  children: [
-    /// NAME + GREETING
-    Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "Hello ${students?.name ?? "Student"} 👋",
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          "Ready to learn something new today?",
-          style: TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 14,
-          ),
-        ),
-      ],
-    ),
-
-    /// PROFILE IMAGE
-    CircleAvatar(
-      radius: 22,
-      backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-      backgroundImage: (students?.profileImage != null &&
-              students!.profileImage!.isNotEmpty)
-          ? NetworkImage(students.profileImage!)
-          : null,
-      child: (students?.profileImage == null ||
-              students!.profileImage!.isEmpty)
-          ? const Icon(Icons.person, color: AppColors.primary)
-          : null,
-    ),
-  ],
-),
-              const SizedBox(height: 20),
-
-              /// Join Course Button
-              GestureDetector(
-                onTap: () {
-                  Navigator.pushNamed(context, '/join-course');
-                },
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [
-                        AppColors.primary,
-                        AppColors.secondary,
+              // ================= HEADER =================
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("Hello, ${students?.name ?? "Student"} 👋", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF1E1B4B))),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.school, size: 14, color: Color(0xFF16A34A)),
+                            const SizedBox(width: 4),
+                            Text("Role: ${students?.role.toUpperCase() ?? 'STUDENT'}", style: const TextStyle(color: Color(0xFF16A34A), fontWeight: FontWeight.bold, fontSize: 12)),
+                          ],
+                        ),
                       ],
                     ),
-                    borderRadius: BorderRadius.circular(16),
                   ),
-                  child: const Center(
-                    child: Text(
-                      "Join New Course",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                  CircleAvatar(
+                    radius: 26,
+                    backgroundColor: const Color(0xFF4F46E5).withOpacity(0.15),
+                    backgroundImage: (students?.profileImage != null && students!.profileImage!.isNotEmpty) ? NetworkImage(students.profileImage!) : null,
+                    child: (students?.profileImage == null || students!.profileImage!.isEmpty) ? const Icon(Icons.person, color: Color(0xFF4F46E5)) : null,
                   ),
-                ),
+                ],
               ),
+              const SizedBox(height: 30),
 
-              const SizedBox(height: 24),
-
-              /// ================= CURRENT COURSES =================
-const Text(
-  "Current Courses",
-  style: TextStyle(
-    fontSize: 18,
-    fontWeight: FontWeight.w700,
-    color: AppColors.textPrimary,
-  ),
-),
-
-const SizedBox(height: 12),
-
-/// Loading
-if (courseProvider.isLoading)
-  const Center(
-    child: Padding(
-      padding: EdgeInsets.all(20),
-      child: CircularProgressIndicator(),
-    ),
-  )
-
-/// Error
-else if (courseProvider.error != null)
-  Center(
-    child: Text(
-      courseProvider.error!,
-      style: const TextStyle(color: Colors.red),
-    ),
-  )
-
-/// Empty
-else if (courses.isEmpty)
-  const Text(
-    "No courses found",
-    style: TextStyle(color: AppColors.textSecondary),
-  )
-
-/// Course List
-else
-  ...courses.take(15).map(
-    (course) => Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: CourseCard(
-        title: course.title,
-        progress: course.progress ?? 0.0, // if not available use 0
-      ),
-    ),
-  ),
-
-              const SizedBox(height: 24),
-
-               /// ================= UPCOMING QUIZZES =================
-              const Text(
-                "Upcoming Quizzes",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
+              // ================= ENROLLED COURSES =================
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text("Enrolled Courses", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
+                  Text("${courses.length} Active", style: const TextStyle(color: Color(0xFF16A34A), fontWeight: FontWeight.bold)),
+                ],
               ),
-
               const SizedBox(height: 12),
 
-              /// Loading
-              if (quizProvider.isLoading)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: CircularProgressIndicator(),
+              if (courseProvider.isLoading)
+                const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
+              else if (courses.isEmpty)
+                Container(
+                  width: double.infinity, padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200)),
+                  child: const Column(
+                    children: [
+                      Icon(Icons.menu_book, size: 40, color: Colors.grey),
+                      SizedBox(height: 10),
+                      Text("No enrolled courses yet.", style: TextStyle(color: Colors.grey)),
+                      Text("Tap the floating button below to join.", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                    ],
                   ),
                 )
-
-              /// Error
-              else if (quizProvider.error != null)
-                Center(
-                  child: Text(
-                    quizProvider.error!,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                )
-
-              /// Empty
-              else if (upcomingQuizzes.isEmpty)
-                const Text(
-                  "No upcoming quizzes",
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                  ),
-                )
-
-              /// Quiz List
               else
-                ...upcomingQuizzes.take(5).map(
-                  (quiz) => Padding(
-                    padding:
-                        const EdgeInsets.only(bottom: 12),
+                ...courses.take(15).map((course) => CourseCard(title: course.title, progress: course.progress ?? 0.0)),
 
-                    child: QuizCard(
-                      title: quiz.title ?? "Untitled Quiz",
+              const SizedBox(height: 30),
 
-                      date: quiz.createdAt != null
-                          ? "${quiz.createdAt!.day}/${quiz.createdAt!.month}/${quiz.createdAt!.year}"
-                          : "Upcoming",
+              // ================= PENDING QUIZZES =================
+              const Text("Pending Quizzes", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
+              const SizedBox(height: 12),
 
-                      // onTap: () {
-                      //   Navigator.pushNamed(
-                      //     context,
-                      //     '/quiz-attempt',
-                      //     arguments: quiz,
-                      //   );
-                      // },
-                    ),
-                  ),
-                ),
-
-              const SizedBox(height: 20),
+              if (quizProvider.isLoading)
+                const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
+              else if (upcomingQuizzes.isEmpty)
+                const Text("No pending quizzes. Great job!", style: TextStyle(color: Colors.grey))
+              else
+                ...upcomingQuizzes.take(5).map((quiz) => QuizCard(title: quiz.title ?? "Untitled Quiz", date: "Due Soon")),
             ],
           ),
         ),
@@ -270,49 +128,58 @@ else
   }
 }
 
+// Custom Wave Button for Student Dashboard
+class _AnimatedWaveButton extends StatefulWidget {
+  final VoidCallback onTap;
+  const _AnimatedWaveButton({required this.onTap});
+  @override
+  State<_AnimatedWaveButton> createState() => _AnimatedWaveButtonState();
+}
+class _AnimatedWaveButtonState extends State<_AnimatedWaveButton> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat();
+  }
+  @override
+  void dispose() { _controller.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              Transform.scale(scale: 1.0 + (_controller.value * 0.4), child: Opacity(opacity: 1.0 - _controller.value, child: Container(width: 65, height: 65, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFF16A34A).withOpacity(0.5))))),
+              Container(width: 65, height: 65, decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFF16A34A), Color(0xFF22C55E)]), boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4))]), child: const Icon(Icons.add, color: Colors.white, size: 30)),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 class CourseCard extends StatelessWidget {
   final String title;
   final double progress;
-
-  const CourseCard({
-    super.key,
-    required this.title,
-    required this.progress,
-  });
-
+  const CourseCard({super.key, required this.title, required this.progress});
   @override
   Widget build(BuildContext context) {
     return Container(
+      margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          )
-        ],
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 4))]),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 16,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 10),
-          LinearProgressIndicator(
-            value: progress,
-            color: AppColors.primary,
-            backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
-          ),
+          Row(children: [const Icon(Icons.class_, color: Color(0xFF4F46E5), size: 20), const SizedBox(width: 8), Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)))]),
+          const SizedBox(height: 12),
+          LinearProgressIndicator(value: progress, color: const Color(0xFF16A34A), backgroundColor: Colors.grey.shade200, borderRadius: BorderRadius.circular(10)),
         ],
       ),
     );
@@ -322,104 +189,20 @@ class CourseCard extends StatelessWidget {
 class QuizCard extends StatelessWidget {
   final String title;
   final String date;
-
-  const QuizCard({
-    super.key,
-    required this.title,
-    required this.date,
-  });
-
+  const QuizCard({super.key, required this.title, required this.date});
   @override
   Widget build(BuildContext context) {
     return Container(
+      margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          )
-        ],
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.red.shade100)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                date,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), const SizedBox(height: 4), Text(date, style: const TextStyle(color: Colors.red, fontSize: 12))])),
+          const Icon(Icons.assignment_late_outlined, color: Colors.red),
         ],
       ),
     );
   }
-}
-
-class StudentBottomNavBar extends StatefulWidget {
-  const StudentBottomNavBar({super.key});
-
-  @override
-  State<StudentBottomNavBar> createState() => _StudentBottomNavBarState();
-}
-
-class _StudentBottomNavBarState extends State<StudentBottomNavBar> {
-  int selectedIndex = 0;
-
-  void onTap(int index) {
-    setState(() {
-      selectedIndex = index;
-    });
-
-    if (index == 1) {
-      Navigator.pushNamed(context, '/courses');
-    } else if (index == 2) {
-      Navigator.pushNamed(context, '/quizzes');
-    } else if (index == 3) {
-      Navigator.pushNamed(context, '/profile');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return BottomNavigationBar(
-      currentIndex: selectedIndex,
-      onTap: onTap,
-      selectedItemColor: AppColors.primary,
-      unselectedItemColor: AppColors.textSecondary,
-      type: BottomNavigationBarType.fixed,
-      items: const [
-        BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
-        BottomNavigationBarItem(icon: Icon(Icons.book), label: "Courses"),
-        BottomNavigationBarItem(icon: Icon(Icons.quiz), label: "Quizzes"),
-        BottomNavigationBarItem(icon: Icon(Icons.person), label: "Profile"),
-      ],
-    );
-  }
-}
-
-class AppColors {
-  static const Color primary = Color(0xFF4F46E5);
-  static const Color secondary = Color(0xFF7C3AED);
-  static const Color background = Colors.white;
-  static const Color surface = Colors.white;
-  static const Color textPrimary = Color(0xFF1E1B4B);
-  static const Color textSecondary = Color(0xFF6B7280);
 }
