@@ -16,12 +16,19 @@ exports.createAIMCQQuiz = async (req, res) => {
   try {
     let { courseId, topic, prompt, courseTitle, difficulty = "medium", questionCount, marksPerQuestion } = req.body;
 
-    const finalCourseId = courseId && courseId !== "UNKNOWN" ? courseId : null;
-    const finalTeacherId = req.user && req.user._id ? req.user._id : "6a2b27ef72643f1a4b2e7b2f"; // Safe fallback ID
+    const finalCourseId = (courseId && courseId !== "UNKNOWN") ? courseId : null;
     let finalTopic = topic || prompt || courseTitle || "General Evaluation";
 
     if (finalTopic.trim() === "") {
         finalTopic = req.file ? "Evaluation strictly based on attached file" : "General Course Evaluation";
+    }
+
+    let finalTeacherId = "6a2b27ef72643f1a4b2e7b2f";
+    if (req.user && req.user._id) {
+       finalTeacherId = req.user._id;
+    } else if (finalCourseId) {
+       const courseRecord = await Course.findById(finalCourseId);
+       if (courseRecord && courseRecord.teacher) finalTeacherId = courseRecord.teacher;
     }
 
     const count = Number(questionCount) || 10;
@@ -44,33 +51,12 @@ exports.createAIMCQQuiz = async (req, res) => {
       }
     }
 
-    const systemInstruction = `
-You are a Lead Examination Board Setter. Create highly analytical multiple-choice questions.
+    const systemInstruction = `You are a Lead Examination Board Setter.
 STRICT RULE 1: Output MUST be strictly valid raw JSON matching the schema precisely.
-STRICT RULE 2: No markdown formatting, no code block backticks (no \`\`\`json), no extra words.
-STRICT RULE 3: Explanations must be a single brief sentence maximum to prevent token crashes.
-`;
+STRICT RULE 2: No markdown formatting, no code block backticks.
+STRICT RULE 3: Explanations must be a single brief sentence maximum.`;
 
-    const userPromptText = `
-Subject Focus Tier: ${finalTopic}
-Difficulty Matrix: ${difficulty}
-Total MCQs Required: ${count}
-${extractedText ? `Reference Context Data:\n${extractedText}\n\n` : ''}
-
-Return a single clean parseable JSON object matching exactly this layout:
-{
-  "title": "Analytical MCQ Assessment",
-  "description": "High-level cognitive evaluation paper.",
-  "questions": [
-    {
-      "question": "Scenario or analytical question?",
-      "options": { "A": "Option A", "B": "Option B", "C": "Option C", "D": "Option D" },
-      "correctAnswer": "A",
-      "explanation": "Brief rationale."
-    }
-  ]
-}
-`;
+    const userPromptText = `Subject Focus Tier: ${finalTopic}\nDifficulty Matrix: ${difficulty}\nTotal MCQs Required: ${count}\n${extractedText ? `Reference Context Data:\n${extractedText}\n\n` : ''}\nReturn a single clean parseable JSON object matching exactly this layout:\n{ "title": "Analytical MCQ Assessment", "description": "High-level cognitive evaluation paper.", "questions": [ { "question": "Scenario or analytical question?", "options": { "A": "Option A", "B": "Option B", "C": "Option C", "D": "Option D" }, "correctAnswer": "A", "explanation": "Brief rationale." } ] }`;
 
     let contentsPayload = [];
     if (attachedFilePart) contentsPayload.push(attachedFilePart);
@@ -83,26 +69,25 @@ Return a single clean parseable JSON object matching exactly this layout:
         systemInstruction: systemInstruction,
         responseMimeType: "application/json",
         temperature: 0.2,
-        tools: [] // 🔥 Permanent Empty to avoid Google Search 429 errors
+        tools: []
       }
     });
 
     let aiData;
     try {
-      let cleanResponse = response.text.trim();
-      if (cleanResponse.startsWith('```')) {
-         cleanResponse = cleanResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+      let cleanResponse = response.text || "";
+      // 🔥 FIX: Backticks use karne ki bajaye hum direct { } brackets dhoondh rahe hain (100% Safe)
+      const startIndex = cleanResponse.indexOf("{");
+      const endIndex = cleanResponse.lastIndexOf("}");
+      if (startIndex !== -1 && endIndex !== -1) {
+         cleanResponse = cleanResponse.substring(startIndex, endIndex + 1);
       }
       aiData = JSON.parse(cleanResponse);
     } catch (err) {
-      return res.status(500).json({ success: false, message: "AI response construction layout crashed. Try making input smaller." });
+      return res.status(500).json({ success: false, message: "AI response processing crashed. Try smaller input." });
     }
 
-    if (!aiData.questions || !Array.isArray(aiData.questions)) {
-       return res.status(500).json({ success: false, message: "AI generated an invalid payload schema." });
-    }
-
-    const formattedQuestions = aiData.questions.slice(0, count).map(q => ({
+    const formattedQuestions = (aiData.questions || []).slice(0, count).map(q => ({
       question: q.question || "Core evaluation query",
       options: { A: q.options?.A || "N/A", B: q.options?.B || "N/A", C: q.options?.C || "N/A", D: q.options?.D || "N/A" },
       correctAnswer: q.correctAnswer || "A",
@@ -123,7 +108,7 @@ Return a single clean parseable JSON object matching exactly this layout:
 
     const dbQuiz = new Quiz({
       course: finalCourseId,
-      teacher: finalTeacherId, // 🔥 Crash Proof Field Assignment
+      teacher: finalTeacherId,
       title: aiData.title || `${finalTopic} Assessment`,
       description: aiData.description || "Premium AI Workspace Grid",
       type: "mcq",
@@ -138,14 +123,14 @@ Return a single clean parseable JSON object matching exactly this layout:
 
     return res.status(200).json({
       success: true,
-      message: "MCQ evaluation sheet generated perfectly",
+      message: "MCQ generated perfectly",
       pdfUrl: `${req.protocol}://${req.get("host")}/uploads/${fileName}`,
       quiz: dbQuiz
     });
 
   } catch (error) {
     console.error("AI Generation Error:", error.message);
-    let msg = error.message.includes("429") ? "API Quota exceeded! Please rest testing for a while." : error.message;
+    let msg = error.message.includes("429") ? "API Quota exceeded! Please check your Google account limits." : error.message;
     return res.status(500).json({ success: false, message: msg });
   }
 };

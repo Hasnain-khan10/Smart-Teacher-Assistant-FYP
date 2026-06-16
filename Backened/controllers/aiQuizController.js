@@ -3,7 +3,7 @@ const fs = require("fs");
 const { GoogleGenAI } = require("@google/genai");
 const Quiz = require("../models/Quiz");
 const Course = require("../models/Course");
-const { generateQuizPDF } = require("../utils/quizPdfGenerator"); // 🔥 FIX: Typo (= require) hata diya gaya hai!
+const { generateQuizPDF } = require("../utils/quizPdfGenerator");
 const pdfParse = require("pdf-parse");
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -16,13 +16,19 @@ exports.createAIQuestionQuiz = async (req, res) => {
   try {
     let { courseId, topic, prompt, courseTitle, difficulty = "medium", shortCount = 0, longCount = 0, shortEachMark = 2, longEachMark = 5, type = "long" } = req.body;
 
-    if (!courseId) {
-        return res.status(400).json({ success: false, message: "Course ID is required." });
-    }
-
+    const finalCourseId = (courseId && courseId !== "UNKNOWN") ? courseId : null;
     let finalTopic = topic || prompt || courseTitle || "";
+
     if (finalTopic.trim() === "") {
         finalTopic = req.file ? "Analytical assessment of attached file." : "General Subjective Assessment";
+    }
+
+    let finalTeacherId = "6a2b27ef72643f1a4b2e7b2f";
+    if (req.user && req.user._id) {
+       finalTeacherId = req.user._id;
+    } else if (finalCourseId) {
+       const courseRecord = await Course.findById(finalCourseId);
+       if (courseRecord && courseRecord.teacher) finalTeacherId = courseRecord.teacher;
     }
 
     const sCount = Number(shortCount) || 0;
@@ -45,11 +51,7 @@ exports.createAIQuestionQuiz = async (req, res) => {
       }
     }
 
-    const systemInstruction = `
-You are a Senior Academic Assessor. Generate descriptive exam questions.
-STRICT RULE 1: Respond with clean raw JSON only. Do not wrap code blocks in markdown formatting.
-STRICT RULE 2: Keep 'idealAnswer' and 'rubric' strictly to 1-2 short sentences to avoid crashes.
-`;
+    const systemInstruction = `You are a Senior Academic Assessor. Generate descriptive exam questions.\nSTRICT RULE 1: Respond with clean raw JSON only. Do not wrap code blocks in markdown formatting.\nSTRICT RULE 2: Keep 'idealAnswer' and 'rubric' strictly to 1-2 short sentences to avoid crashes.`;
 
     let formatRequirementText = "";
     if (type === "short") {
@@ -60,12 +62,7 @@ STRICT RULE 2: Keep 'idealAnswer' and 'rubric' strictly to 1-2 short sentences t
       formatRequirementText = `Generate ${sCount} short and ${lCount} long questions. \nJSON Format Layout:\n{ "title": "Mixed Paper", "description": "...", "shortQuestions": [{ "question": "...", "marks": ${sEach}, "idealAnswer": "...", "rubric": "..." }], "longQuestions": [{ "question": "...", "marks": ${lEach}, "idealAnswer": "...", "rubric": "..." }] }`;
     }
 
-    const userPromptText = `
-Subject Focus Area: ${finalTopic}
-Difficulty Tier: ${difficulty}
-${extractedText ? `Reference Text Context:\n${extractedText}\n\n` : ''}
-${formatRequirementText}
-`;
+    const userPromptText = `Subject Focus Area: ${finalTopic}\nDifficulty Tier: ${difficulty}\n${extractedText ? `Reference Text Context:\n${extractedText}\n\n` : ''}\n${formatRequirementText}`;
 
     let contentsPayload = [];
     if (attachedFilePart) contentsPayload.push(attachedFilePart);
@@ -84,8 +81,13 @@ ${formatRequirementText}
 
     let aiData;
     try {
-        let cleanResponse = response.text.trim();
-        if(cleanResponse.startsWith('```')) cleanResponse = cleanResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+        let cleanResponse = response.text || "";
+        // 🔥 FIX: Safe Bracket Extraction (No syntax errors during copy-paste)
+        const startIndex = cleanResponse.indexOf("{");
+        const endIndex = cleanResponse.lastIndexOf("}");
+        if (startIndex !== -1 && endIndex !== -1) {
+           cleanResponse = cleanResponse.substring(startIndex, endIndex + 1);
+        }
         aiData = JSON.parse(cleanResponse);
     } catch (parseErr) {
       return res.status(500).json({ success: false, message: "AI response failed to parse. Try with fewer questions." });
@@ -107,10 +109,9 @@ ${formatRequirementText}
 
     await generateQuizPDF(aiData, filePath);
 
-    // 🔥 FIX: req.user._id use kiya taake aapke account mein save ho aur list mein show ho!
     const savedQuizModel = new Quiz({
-      course: courseId,
-      teacher: req.user._id,
+      course: finalCourseId,
+      teacher: finalTeacherId,
       title: aiData.title || `Written Exam Paper for ${finalTopic}`,
       description: aiData.description || "Descriptive Assessment",
       type: type === "both" ? "mixed" : "question",

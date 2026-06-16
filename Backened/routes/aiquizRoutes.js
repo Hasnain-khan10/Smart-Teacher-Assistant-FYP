@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const upload = require("../middleware/upload"); // 🔥 Multer import kiya file parsing ke liye
+const upload = require("../middleware/upload");
 
 // Controllers Import
 const { createAIQuestionQuiz } = require("../controllers/aiQuizController");
@@ -10,12 +10,10 @@ const { createAIMCQQuiz } = require("../controllers/aiMcqQuizController");
 // 🤖 AI QUIZ GENERATION ENDPOINTS
 // ====================================================
 
-// 📝 1. Short / Long / Mixed Questions Generator
-// Endpoint: POST /api/ai/quizzes/question (Ya jo aapne server.js mein bind kiya hai)
-router.post("/question", upload.single("book"), createAIQuestionQuiz);
+// 🔥 FIX 1: "/question" ko "/descriptive" kar diya taake Flutter ki request yahan puhanch sakay!
+router.post("/descriptive", upload.single("book"), createAIQuestionQuiz);
 
-// 🎯 2. Multiple Choice Questions (MCQ) Generator
-// Endpoint: POST /api/ai/quizzes/mcq
+// MCQ Route
 router.post("/mcq", upload.single("book"), createAIMCQQuiz);
 
 module.exports = router;
