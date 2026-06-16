@@ -9,6 +9,7 @@ import 'package:frontened/screens/Teacher/Quiz/TeacherQuizManagementCenter.dart'
 import 'package:frontened/models/week_plan_model.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart'; // 🔥 Naya Share import
 
 class TeacherUnifiedCourseScreen extends StatefulWidget {
   final String courseId;
@@ -64,20 +65,20 @@ class _TeacherUnifiedCourseScreenState extends State<TeacherUnifiedCourseScreen>
     }
   }
 
-  // 🔥 FULLY FUNCTIONAL URL LAUNCHER
-  Future<void> _openFileUrl(String url) async {
-    if (url.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("File URL is empty."), backgroundColor: Colors.red));
-      return;
-    }
-    final Uri uri = Uri.parse(url);
-    try {
-      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Could not open file on this device."), backgroundColor: Colors.red));
-      }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error launching file: $e"), backgroundColor: Colors.red));
-    }
+  // Share Content with ChatGPT / Gemini
+  void _shareWeekToAI(WeekModel week) {
+    String textToShare = """
+I am preparing a lecture for university students. Can you provide a highly detailed and expansive explanation for the following topic?
+
+*Course:* ${widget.courseTitle}
+*Week ${week.weekNumber}:* ${week.title}
+*Definition:* ${week.definition}
+*Sub-Topics:* ${week.subTopics.join(", ")}
+*Analogy Idea:* ${week.realWorldAnalogy}
+
+Please expand on this comprehensively.
+""";
+    Share.share(textToShare);
   }
 
   @override
@@ -156,45 +157,12 @@ class _TeacherUnifiedCourseScreenState extends State<TeacherUnifiedCourseScreen>
 
     return Column(
       children: [
-        // 🔥 FUNCTIONAL HEADER BADGE (PDF/DOCX/PPT)
-        Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(colors: [Colors.blue.shade900, const Color(0xFF4F46E5)]),
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4))],
-          ),
-          child: Row(
-            children: [
-              Icon(
-                plan.outputFormat == "PPT" ? Icons.slideshow : (plan.outputFormat == "DOCX" ? Icons.description : Icons.picture_as_pdf),
-                color: Colors.white, size: 28,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("Generated Document", style: TextStyle(color: Colors.white70, fontSize: 12)),
-                    Text("${plan.outputFormat} Format Ready", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                  ],
-                ),
-              ),
-              ElevatedButton.icon(
-                onPressed: () => _openFileUrl(plan.documentUrl), // 🔥 Functional Download/Open
-                icon: const Icon(Icons.open_in_new, size: 16, color: Color(0xFF4F46E5)),
-                label: const Text("Open File", style: TextStyle(color: Color(0xFF4F46E5), fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-              )
-            ],
-          ),
-        ),
+        // 🔥 EXTRA PDF CARD REMOVED AS REQUESTED!
 
-        // 🔥 EXPANDABLE WEEKS LIST WITH MENU
+        // EXPANDABLE WEEKS LIST
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16), // Padding adjusted
             itemCount: plan.weeks.length,
             itemBuilder: (context, index) {
               final week = plan.weeks[index];
@@ -217,20 +185,25 @@ class _TeacherUnifiedCourseScreenState extends State<TeacherUnifiedCourseScreen>
                     title: Text(week.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     subtitle: Text(week.subTopics.join(", "), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
 
-                    // 🔥 THE 3-DOT MENU
-                    trailing: PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert, color: Colors.black87),
-                      onSelected: (value) {
-                        if (value == "download") provider.downloadAndOpenWeekPDF(widget.courseId, week.weekNumber);
-                        if (value == "ai_edit") _showAIEditDialog(week);
-                        if (value == "manual_edit") _showManualEditDialog(week, plan.id, provider.plan!.weeks);
-                        if (value == "delete") _showDeleteDialog(week.weekNumber);
-                      },
-                      itemBuilder: (BuildContext context) => [
-                        const PopupMenuItem(value: "download", child: Row(children: [Icon(Icons.picture_as_pdf, color: Colors.red, size: 18), SizedBox(width: 10), Text("Download PDF")])),
-                        const PopupMenuItem(value: "ai_edit", child: Row(children: [Icon(Icons.auto_awesome, color: Colors.blue, size: 18), SizedBox(width: 10), Text("Edit by AI Prompt")])),
-                        const PopupMenuItem(value: "manual_edit", child: Row(children: [Icon(Icons.edit, color: Colors.orange, size: 18), SizedBox(width: 10), Text("Edit Manually")])),
-                        const PopupMenuItem(value: "delete", child: Row(children: [Icon(Icons.delete, color: Colors.grey, size: 18), SizedBox(width: 10), Text("Delete Week")])),
+                    // 🔥 NEW REQUESTED ACTION ICONS
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.orange, size: 20),
+                          tooltip: "Edit Week",
+                          onPressed: () => _showEditChoiceDialog(week, plan.id, plan.weeks),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.download, color: Colors.blue, size: 20),
+                          tooltip: "Download/Open PDF",
+                          onPressed: () => provider.downloadAndOpenWeekPDF(widget.courseId, week.weekNumber),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.share, color: Colors.green, size: 20),
+                          tooltip: "Share to AI / App",
+                          onPressed: () => _shareWeekToAI(week),
+                        ),
                       ],
                     ),
 
@@ -254,7 +227,7 @@ class _TeacherUnifiedCourseScreenState extends State<TeacherUnifiedCourseScreen>
 
                       // Explanation
                       if (week.detailedExplanation.isNotEmpty) ...[
-                        const Align(alignment: Alignment.centerLeft, child: Text("Detailed Explanation", style: TextStyle(fontWeight: FontWeight.bold))),
+                        const Align(alignment: Alignment.centerLeft, child: Text("Brief Explanation", style: TextStyle(fontWeight: FontWeight.bold))),
                         const SizedBox(height: 6),
                         Text(week.detailedExplanation, style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.5)),
                         const SizedBox(height: 12),
@@ -312,8 +285,39 @@ class _TeacherUnifiedCourseScreenState extends State<TeacherUnifiedCourseScreen>
   }
 
   // ===============================================
-  // DIALOGS: AI Edit, Manual Edit, Delete
+  // DIALOGS: Edit Options (AI / Manual)
   // ===============================================
+
+  void _showEditChoiceDialog(WeekModel week, String planId, List<WeekModel> allWeeks) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Edit Week"),
+        content: const Text("How would you like to edit this week?"),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            icon: const Icon(Icons.auto_awesome, color: Colors.white, size: 16),
+            label: const Text("By Prompt (AI)", style: TextStyle(color: Colors.white)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showAIEditDialog(week);
+            },
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            icon: const Icon(Icons.edit, color: Colors.white, size: 16),
+            label: const Text("Manually", style: TextStyle(color: Colors.white)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showManualEditDialog(week, planId, allWeeks);
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
   void _showAIEditDialog(WeekModel week) {
     final TextEditingController promptCtrl = TextEditingController();
@@ -360,7 +364,7 @@ class _TeacherUnifiedCourseScreenState extends State<TeacherUnifiedCourseScreen>
               const SizedBox(height: 10),
               TextField(controller: defCtrl, maxLines: 2, decoration: const InputDecoration(labelText: "Definition")),
               const SizedBox(height: 10),
-              TextField(controller: expCtrl, maxLines: 3, decoration: const InputDecoration(labelText: "Detailed Explanation")),
+              TextField(controller: expCtrl, maxLines: 3, decoration: const InputDecoration(labelText: "Brief Explanation")),
             ],
           ),
         ),
@@ -369,7 +373,6 @@ class _TeacherUnifiedCourseScreenState extends State<TeacherUnifiedCourseScreen>
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
             onPressed: () {
-              // Update local object
               final updatedWeek = WeekModel(
                 weekNumber: week.weekNumber,
                 title: titleCtrl.text,
@@ -379,7 +382,6 @@ class _TeacherUnifiedCourseScreenState extends State<TeacherUnifiedCourseScreen>
                 codeOrQuerySnippet: week.codeOrQuerySnippet,
                 realWorldAnalogy: week.realWorldAnalogy,
               );
-              // Replace in list
               final index = allWeeks.indexWhere((w) => w.weekNumber == week.weekNumber);
               if (index != -1) {
                 allWeeks[index] = updatedWeek;
@@ -388,27 +390,6 @@ class _TeacherUnifiedCourseScreenState extends State<TeacherUnifiedCourseScreen>
               Navigator.pop(ctx);
             },
             child: const Text("Save Changes", style: TextStyle(color: Colors.white)),
-          )
-        ],
-      ),
-    );
-  }
-
-  void _showDeleteDialog(int weekNumber) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Delete Week?", style: TextStyle(color: Colors.red)),
-        content: Text("Delete Week $weekNumber?"),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () {
-              context.read<WeekPlanProvider>().deleteWeek(widget.courseId, weekNumber);
-              Navigator.pop(ctx);
-            },
-            child: const Text("Delete", style: TextStyle(color: Colors.white)),
           )
         ],
       ),
