@@ -2,7 +2,9 @@ const path = require("path");
 const fs = require("fs");
 const { GoogleGenAI } = require("@google/genai");
 const Quiz = require("../models/Quiz");
+const Course = require("../models/Course");
 const { generateQuizPDF } = require("../utils/quizPdfGenerator");
+const pdfParse = require("pdf-parse");
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -12,71 +14,62 @@ function fileToGenerativePart(filePath, mimeType) {
 
 exports.createAIMCQQuiz = async (req, res) => {
   try {
-    // 🔥 DYNAMIC KEY MAPPING: Accepts any variant from frontend
-    let { courseId, course, teacherId, teacher, topic, prompt, courseTitle, difficulty = "medium", questionCount, marksPerQuestion } = req.body;
+    let { courseId, topic, prompt, courseTitle, difficulty = "medium", questionCount, marksPerQuestion } = req.body;
 
-    const finalCourseId = courseId || course;
-    const finalTeacherId = teacherId || teacher || "6a2b27ef72643f1a4b2e7b2f"; // Fallback to safe ID if null
+    const finalCourseId = courseId && courseId !== "UNKNOWN" ? courseId : null;
+    const finalTeacherId = req.user && req.user._id ? req.user._id : "6a2b27ef72643f1a4b2e7b2f"; // Safe fallback ID
+    let finalTopic = topic || prompt || courseTitle || "General Evaluation";
 
-    // Fallback topic selection
-    let finalTopic = topic || prompt || courseTitle || "";
-
-    if (!finalCourseId) {
-      return res.status(400).json({ success: false, message: "Validation Failed: courseId or course identifier is missing." });
-    }
-
-    // 🔥 FIX: Either topic OR book file must be present
-    if (finalTopic.trim() === "" && !req.file) {
-      return res.status(400).json({ success: false, message: "Validation Failed: Please provide a Topic/Prompt OR upload a Reference Book." });
-    }
-
-    // If topic is empty but book is uploaded, give it a default context
-    if (finalTopic.trim() === "" && req.file) {
-      finalTopic = "Comprehensive evaluation based strictly on the attached reference material.";
+    if (finalTopic.trim() === "") {
+        finalTopic = req.file ? "Evaluation strictly based on attached file" : "General Course Evaluation";
     }
 
     const count = Number(questionCount) || 10;
     const perMark = Number(marksPerQuestion) || 1;
 
+    let extractedText = "";
     let attachedFilePart = null;
-    let isGroundingEnabled = true;
 
     if (req.file) {
-      isGroundingEnabled = false; // Disable web search if reference material is provided
-      let mimeType = "application/pdf";
-      if (req.file.originalname.toLowerCase().endsWith(".docx")) mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-      else if (req.file.mimetype !== "application/octet-stream") mimeType = req.file.mimetype;
-      attachedFilePart = fileToGenerativePart(req.file.path, mimeType);
+      if (req.file.mimetype === "application/pdf") {
+        try {
+            const dataBuffer = fs.readFileSync(req.file.path);
+            const pdfData = await pdfParse(dataBuffer);
+            extractedText = pdfData.text ? pdfData.text.substring(0, 7000) : "";
+        } catch(e) {
+            console.log("PDF parse warning:", e.message);
+        }
+      } else if (req.file.mimetype.startsWith("image/")) {
+        attachedFilePart = fileToGenerativePart(req.file.path, req.file.mimetype);
+      }
     }
 
     const systemInstruction = `
-You are a Lead Examination Board Setter for top-tier Ivy League universities.
-1. Create highly analytical, scenario-based multiple-choice questions. Avoid simple rote-memorization.
-2. Provide a detailed explanation/rationale for WHY the correct answer is correct.
-3. If a reference file is provided, STRICTLY extract concepts from it. If not, use your internet tools to find authentic facts.
-4. Output STRICTLY as a valid JSON object.
+You are a Lead Examination Board Setter. Create highly analytical multiple-choice questions.
+STRICT RULE 1: Output MUST be strictly valid raw JSON matching the schema precisely.
+STRICT RULE 2: No markdown formatting, no code block backticks (no \`\`\`json), no extra words.
+STRICT RULE 3: Explanations must be a single brief sentence maximum to prevent token crashes.
 `;
 
     const userPromptText = `
-Design a premium MCQ Exam.
-Topic/Context Focus: ${finalTopic}
-Difficulty Level: ${difficulty}
+Subject Focus Tier: ${finalTopic}
+Difficulty Matrix: ${difficulty}
 Total MCQs Required: ${count}
+${extractedText ? `Reference Context Data:\n${extractedText}\n\n` : ''}
 
-Return a single JSON object structured EXACTLY like this:
+Return a single clean parseable JSON object matching exactly this layout:
 {
-  "title": "Analytical Assessment",
+  "title": "Analytical MCQ Assessment",
   "description": "High-level cognitive evaluation paper.",
   "questions": [
     {
-      "question": "A real-world scenario or deep analytical question...",
+      "question": "Scenario or analytical question?",
       "options": { "A": "Option A", "B": "Option B", "C": "Option C", "D": "Option D" },
       "correctAnswer": "A",
-      "explanation": "Detailed pedagogical rationale explaining why A is the correct choice."
+      "explanation": "Brief rationale."
     }
   ]
 }
-Generate exactly ${count} objects inside the questions array.
 `;
 
     let contentsPayload = [];
@@ -89,23 +82,31 @@ Generate exactly ${count} objects inside the questions array.
       config: {
         systemInstruction: systemInstruction,
         responseMimeType: "application/json",
-        temperature: 0.3,
-        tools: isGroundingEnabled ? [{ googleSearch: {} }] : []
+        temperature: 0.2,
+        tools: [] // 🔥 Permanent Empty to avoid Google Search 429 errors
       }
     });
 
     let aiData;
     try {
-      aiData = JSON.parse(response.text.trim());
+      let cleanResponse = response.text.trim();
+      if (cleanResponse.startsWith('```')) {
+         cleanResponse = cleanResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+      }
+      aiData = JSON.parse(cleanResponse);
     } catch (err) {
-      return res.status(500).json({ success: false, message: "AI response processing layer collapsed into invalid JSON structure." });
+      return res.status(500).json({ success: false, message: "AI response construction layout crashed. Try making input smaller." });
     }
 
-    const formattedQuestions = aiData.questions.map(q => ({
-      question: q.question,
-      options: { A: q.options?.A || "", B: q.options?.B || "", C: q.options?.C || "", D: q.options?.D || "" },
+    if (!aiData.questions || !Array.isArray(aiData.questions)) {
+       return res.status(500).json({ success: false, message: "AI generated an invalid payload schema." });
+    }
+
+    const formattedQuestions = aiData.questions.slice(0, count).map(q => ({
+      question: q.question || "Core evaluation query",
+      options: { A: q.options?.A || "N/A", B: q.options?.B || "N/A", C: q.options?.C || "N/A", D: q.options?.D || "N/A" },
       correctAnswer: q.correctAnswer || "A",
-      explanation: q.explanation || "Correct answer based on premium academic evaluation.",
+      explanation: q.explanation || "Correct answer mapped dynamically.",
       marks: perMark
     }));
 
@@ -116,33 +117,35 @@ Generate exactly ${count} objects inside the questions array.
     const filePath = path.join(uploadDir, fileName);
 
     aiData.questions = formattedQuestions;
-    aiData.examMeta = { marksPerQuestion: perMark, totalMarks: count * perMark };
+    aiData.examMeta = { marksPerQuestion: perMark, totalMarks: formattedQuestions.length * perMark };
 
     await generateQuizPDF(aiData, filePath);
 
     const dbQuiz = new Quiz({
       course: finalCourseId,
-      teacher: finalTeacherId,
+      teacher: finalTeacherId, // 🔥 Crash Proof Field Assignment
       title: aiData.title || `${finalTopic} Assessment`,
-      description: aiData.description || "Premium AI Generated Quiz Workspace",
+      description: aiData.description || "Premium AI Workspace Grid",
       type: "mcq",
       questions: formattedQuestions,
-      totalMarks: count * perMark,
+      totalMarks: formattedQuestions.length * perMark,
       marksPerQuestion: perMark,
       examMeta: { type: "MCQ_EXAM", generatedBy: "AI_PREMIUM" }
     });
 
-    const savedQuiz = await dbQuiz.save();
+    await dbQuiz.save();
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
 
     return res.status(200).json({
       success: true,
       message: "MCQ evaluation sheet generated perfectly",
       pdfUrl: `${req.protocol}://${req.get("host")}/uploads/${fileName}`,
-      quiz: savedQuiz
+      quiz: dbQuiz
     });
 
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error("AI Generation Error:", error.message);
+    let msg = error.message.includes("429") ? "API Quota exceeded! Please rest testing for a while." : error.message;
+    return res.status(500).json({ success: false, message: msg });
   }
 };

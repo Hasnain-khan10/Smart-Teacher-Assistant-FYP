@@ -2,7 +2,9 @@ const path = require("path");
 const fs = require("fs");
 const { GoogleGenAI } = require("@google/genai");
 const Quiz = require("../models/Quiz");
-const { generateQuizPDF } = require("../utils/quizPdfGenerator");
+const Course = require("../models/Course");
+const { generateQuizPDF } = require("../utils/quizPdfGenerator"); // 🔥 FIX: Typo (= require) hata diya gaya hai!
+const pdfParse = require("pdf-parse");
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -12,23 +14,15 @@ function fileToGenerativePart(filePath, mimeType) {
 
 exports.createAIQuestionQuiz = async (req, res) => {
   try {
-    // 🔥 DYNAMIC KEY MAPPING
-    let { courseId, course, teacherId, teacher, topic, prompt, courseTitle, difficulty = "medium", shortCount = 0, longCount = 0, shortEachMark = 2, longEachMark = 5, type = "long" } = req.body;
+    let { courseId, topic, prompt, courseTitle, difficulty = "medium", shortCount = 0, longCount = 0, shortEachMark = 2, longEachMark = 5, type = "long" } = req.body;
 
-    const finalCourseId = courseId || course;
-    const finalTeacherId = teacherId || teacher || "6a2b27ef72643f1a4b2e7b2f";
+    if (!courseId) {
+        return res.status(400).json({ success: false, message: "Course ID is required." });
+    }
+
     let finalTopic = topic || prompt || courseTitle || "";
-
-    if (!finalCourseId) {
-      return res.status(400).json({ success: false, message: "Validation Failed: courseId/course mapping key is mandatory." });
-    }
-
-    if (finalTopic.trim() === "" && !req.file) {
-      return res.status(400).json({ success: false, message: "Validation Failed: Please provide a Topic/Prompt OR upload a Reference Book." });
-    }
-
-    if (finalTopic.trim() === "" && req.file) {
-      finalTopic = "Comprehensive written assessment map from attached files.";
+    if (finalTopic.trim() === "") {
+        finalTopic = req.file ? "Analytical assessment of attached file." : "General Subjective Assessment";
     }
 
     const sCount = Number(shortCount) || 0;
@@ -36,40 +30,40 @@ exports.createAIQuestionQuiz = async (req, res) => {
     const sEach = Number(shortEachMark) || 2;
     const lEach = Number(longEachMark) || 5;
 
+    let extractedText = "";
     let attachedFilePart = null;
-    let isGroundingEnabled = true;
 
     if (req.file) {
-      isGroundingEnabled = false;
-      let mimeType = "application/pdf";
-      if (req.file.originalname.toLowerCase().endsWith(".docx")) mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-      else if (req.file.mimetype !== "application/octet-stream") mimeType = req.file.mimetype;
-      attachedFilePart = fileToGenerativePart(req.file.path, mimeType);
+      if (req.file.mimetype === "application/pdf") {
+        try {
+            const dataBuffer = fs.readFileSync(req.file.path);
+            const pdfData = await pdfParse(dataBuffer);
+            extractedText = pdfData.text ? pdfData.text.substring(0, 7000) : "";
+        } catch(e) {}
+      } else if (req.file.mimetype.startsWith("image/")) {
+        attachedFilePart = fileToGenerativePart(req.file.path, req.file.mimetype);
+      }
     }
 
     const systemInstruction = `
-You are a Senior Academic Assessor for premier technical institutions. Set formal descriptive examination papers.
-1. Generate analytical, problem-solving, and architectural thinking questions.
-2. Provide an 'idealAnswer' (solution blueprint) and a comprehensive 'rubric' for the teacher's grading matrix.
-3. Respond strictly inside a valid JSON object structure.
+You are a Senior Academic Assessor. Generate descriptive exam questions.
+STRICT RULE 1: Respond with clean raw JSON only. Do not wrap code blocks in markdown formatting.
+STRICT RULE 2: Keep 'idealAnswer' and 'rubric' strictly to 1-2 short sentences to avoid crashes.
 `;
 
     let formatRequirementText = "";
     if (type === "short") {
-      formatRequirementText = `Generate exactly ${sCount} short questions. Layout:
-      { "title": "Short Answer Assessment", "description": "...", "shortQuestions": [{ "question": "...", "marks": ${sEach}, "idealAnswer": "...", "rubric": "..." }] }`;
+      formatRequirementText = `Generate EXACTLY ${sCount} short questions. \nJSON Format Layout:\n{ "title": "Short Paper", "description": "...", "shortQuestions": [{ "question": "...", "marks": ${sEach}, "idealAnswer": "solution context", "rubric": "points blueprint" }] }`;
     } else if (type === "long") {
-      formatRequirementText = `Generate exactly ${lCount} long detailed analytical questions. Layout:
-      { "title": "Long Essay Examination", "description": "...", "longQuestions": [{ "question": "...", "marks": ${lEach}, "idealAnswer": "...", "rubric": "..." }] }`;
+      formatRequirementText = `Generate EXACTLY ${lCount} long questions. \nJSON Format Layout:\n{ "title": "Long Paper", "description": "...", "longQuestions": [{ "question": "...", "marks": ${lEach}, "idealAnswer": "solution blueprint", "rubric": "grading framework" }] }`;
     } else {
-      formatRequirementText = `Generate ${sCount} short and ${lCount} long questions. Layout:
-      { "title": "Mixed Written Paper", "description": "...", "shortQuestions": [{ "question": "...", "marks": ${sEach}, "idealAnswer": "...", "rubric": "..." }], "longQuestions": [{ "question": "...", "marks": ${lEach}, "idealAnswer": "...", "rubric": "..." }] }`;
+      formatRequirementText = `Generate ${sCount} short and ${lCount} long questions. \nJSON Format Layout:\n{ "title": "Mixed Paper", "description": "...", "shortQuestions": [{ "question": "...", "marks": ${sEach}, "idealAnswer": "...", "rubric": "..." }], "longQuestions": [{ "question": "...", "marks": ${lEach}, "idealAnswer": "...", "rubric": "..." }] }`;
     }
 
     const userPromptText = `
-Construct a professional written descriptive examination:
 Subject Focus Area: ${finalTopic}
 Difficulty Tier: ${difficulty}
+${extractedText ? `Reference Text Context:\n${extractedText}\n\n` : ''}
 ${formatRequirementText}
 `;
 
@@ -83,21 +77,23 @@ ${formatRequirementText}
       config: {
         systemInstruction: systemInstruction,
         responseMimeType: "application/json",
-        temperature: 0.3,
-        tools: isGroundingEnabled ? [{ googleSearch: {} }] : []
+        temperature: 0.2,
+        tools: []
       }
     });
 
     let aiData;
     try {
-      aiData = JSON.parse(response.text.trim());
+        let cleanResponse = response.text.trim();
+        if(cleanResponse.startsWith('```')) cleanResponse = cleanResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+        aiData = JSON.parse(cleanResponse);
     } catch (parseErr) {
-      return res.status(500).json({ success: false, message: "AI response structural parsing crashed." });
+      return res.status(500).json({ success: false, message: "AI response failed to parse. Try with fewer questions." });
     }
 
-    const dbShortArray = (aiData.shortQuestions || []).map(q => ({ question: q.question, marks: sEach, idealAnswer: q.idealAnswer || "Descriptive solution criteria.", rubric: q.rubric || "Award points based on accuracy." }));
-    const dbLongArray = (aiData.longQuestions || []).map(q => ({ question: q.question, marks: lEach, idealAnswer: q.idealAnswer || "Descriptive solution criteria.", rubric: q.rubric || "Award points based on accuracy." }));
-    const totalMarks = (sCount * sEach) + (lCount * lEach);
+    const dbShortArray = (aiData.shortQuestions || []).slice(0, sCount).map(q => ({ question: q.question, marks: sEach, idealAnswer: q.idealAnswer || "Brief solution.", rubric: q.rubric || "Standard marks." }));
+    const dbLongArray = (aiData.longQuestions || []).slice(0, lCount).map(q => ({ question: q.question, marks: lEach, idealAnswer: q.idealAnswer || "Detailed solution.", rubric: q.rubric || "Full architectural details." }));
+    const totalMarks = (dbShortArray.length * sEach) + (dbLongArray.length * lEach);
 
     const uploadDir = path.join(__dirname, "../uploads");
     if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -111,11 +107,12 @@ ${formatRequirementText}
 
     await generateQuizPDF(aiData, filePath);
 
+    // 🔥 FIX: req.user._id use kiya taake aapke account mein save ho aur list mein show ho!
     const savedQuizModel = new Quiz({
-      course: finalCourseId,
-      teacher: finalTeacherId,
+      course: courseId,
+      teacher: req.user._id,
       title: aiData.title || `Written Exam Paper for ${finalTopic}`,
-      description: aiData.description || "Descriptive Written Assessment Blueprints",
+      description: aiData.description || "Descriptive Assessment",
       type: type === "both" ? "mixed" : "question",
       shortQuestions: dbShortArray,
       longQuestions: dbLongArray,
@@ -123,17 +120,19 @@ ${formatRequirementText}
       isAIScanned: false
     });
 
-    const finalCatalogedData = await savedQuizModel.save();
+    await savedQuizModel.save();
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
 
     return res.status(200).json({
       success: true,
-      message: "Written assessment blueprint indexed perfectly",
+      message: "Quiz generated perfectly",
       pdfUrl: `${req.protocol}://${req.get("host")}/uploads/${fileName}`,
-      quiz: finalCatalogedData
+      quiz: savedQuizModel
     });
 
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error("AI Generation Error:", error.message);
+    let msg = error.message.includes("429") ? "API Quota exceeded! Please check your Google account limits." : error.message;
+    return res.status(500).json({ success: false, message: msg });
   }
 };

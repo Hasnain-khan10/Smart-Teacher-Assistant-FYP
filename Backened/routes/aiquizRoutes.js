@@ -12,10 +12,10 @@ const { createAIMCQQuiz } = require("../controllers/aiMcqQuizController");
 
 // 📝 1. Short / Long / Mixed Questions Generator
 // Endpoint: POST /api/ai/quizzes/question (Ya jo aapne server.js mein bind kiya hai)
-router.post("/question", upload.single("file"), createAIQuestionQuiz);
+router.post("/question", upload.single("book"), createAIQuestionQuiz);
 
 // 🎯 2. Multiple Choice Questions (MCQ) Generator
 // Endpoint: POST /api/ai/quizzes/mcq
-router.post("/mcq", upload.single("file"), createAIMCQQuiz);
+router.post("/mcq", upload.single("book"), createAIMCQQuiz);
 
 module.exports = router;
