@@ -1,11 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontened/Provider/course_provider.dart';
 import 'package:frontened/Provider/quiz_provider.dart';
 
-// 🔥 LAZMI IMPORTS: (Duplicate and wrong imports removed)
 import 'package:frontened/screens/Teacher/Quiz/TeacherQuizPreviewScreen.dart';
 import 'package:frontened/screens/Teacher/Quiz/TeacherQuizEvaluationScreen.dart';
+import 'package:frontened/screens/Teacher/Quiz/TeacherScannerOverlay.dart';
 
 class TeacherQuizManagementCenter extends StatefulWidget {
   final String quizId;
@@ -28,7 +29,7 @@ class TeacherQuizManagementCenter extends StatefulWidget {
 }
 
 class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCenter> {
-  String _activeView = "results"; // "results" or "scanning"
+  String _activeView = "results";
 
   @override
   void initState() {
@@ -37,6 +38,68 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
       context.read<QuizProvider>().fetchQuizResults(widget.quizId, quizId: widget.quizId);
       context.read<CourseProvider>().fetchCourseStudents(widget.courseId);
     });
+  }
+
+  // 🔥 AI AUTO-GRADING FUNCTION (Ab False Success nahi dikhayega!)
+  Future<void> _startScanningProcess(BuildContext context, String studentId, String studentName) async {
+    final List<File>? scannedPages = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TeacherScannerOverlay(
+          studentName: studentName,
+          quizTitle: widget.quizTitle,
+        ),
+      ),
+    );
+
+    if (scannedPages != null && scannedPages.isNotEmpty) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          content: const Row(
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4F46E5)),
+              SizedBox(width: 20),
+              Expanded(
+                child: Text("🤖 AI is evaluating...\nPlease wait, this may take a minute.", style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      // 1. Send files to AI Backend
+      final result = await context.read<QuizProvider>().scanAIQuizMarks(
+        courseId: widget.courseId,
+        studentId: studentId,
+        title: widget.quizTitle,
+        files: scannedPages,
+      );
+
+      if (mounted) Navigator.pop(context); // Loading dialog band karein
+
+      // 2. CHECK IF ACTUAL RESULT CAME BACK
+      if (result != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("✅ AI Auto-Grading Completed!"), backgroundColor: Colors.green),
+          );
+
+          await context.read<QuizProvider>().fetchQuizResults(widget.quizId, quizId: widget.quizId);
+          setState(() => _activeView = "results");
+        }
+      } else {
+        // 🔥 AGAR ERROR AAYA HAI TO YAHAN SHOW HOGA
+        final errorMessage = context.read<QuizProvider>().error ?? "Backend failed to process image. Check Node.js console.";
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("❌ Scan Failed: $errorMessage"), backgroundColor: Colors.red, duration: const Duration(seconds: 4)),
+          );
+        }
+      }
+    }
   }
 
   @override
@@ -55,28 +118,15 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
         title: Text(widget.quizTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          // 🔥 REAL, FUNCTIONAL "VIEW ANSWER KEY" BUTTON
           Padding(
             padding: const EdgeInsets.only(right: 8.0),
             child: TextButton.icon(
               onPressed: () {
                 try {
-                  // Find the REAL full quiz object from provider memory
-                  final fullQuiz = quizProvider.quizzes.firstWhere(
-                        (q) => q.id == widget.quizId,
-                  );
-
-                  // Navigate to the Preview Screen with REAL data
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => TeacherQuizPreviewScreen(quiz: fullQuiz),
-                    ),
-                  );
+                  final fullQuiz = quizProvider.quizzes.firstWhere((q) => q.id == widget.quizId);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => TeacherQuizPreviewScreen(quiz: fullQuiz)));
                 } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Quiz data is still loading, please wait!"), backgroundColor: Colors.orange)
-                  );
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Quiz data is loading..."), backgroundColor: Colors.orange));
                 }
               },
               icon: const Icon(Icons.vpn_key, color: Colors.yellowAccent, size: 18),
@@ -88,7 +138,6 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
       ),
       body: Column(
         children: [
-          // 🔥 MODERN UNIQUE SWITCH TOGGLE
           Container(
             padding: const EdgeInsets.all(12),
             color: Colors.white,
@@ -103,7 +152,6 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
               ),
             ),
           ),
-
           Expanded(
             child: _activeView == "results"
                 ? _buildResultsList(results)
@@ -139,7 +187,7 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
   }
 
   // ==========================================
-  // RESULTS TAB
+  // RESULTS TAB (🔥 ListTile Removed, Used Safe Custom Row)
   // ==========================================
   Widget _buildResultsList(List results) {
     if (results.isEmpty) return const Center(child: Text("No student attempts recorded yet."));
@@ -155,37 +203,48 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
         final List detailedAnswers = r["detailedAnswers"] ?? [];
         final String aiFeedback = r["aiFeedback"] ?? "AI has evaluated this paper successfully. Further insights will be available soon.";
 
-        return Card(
-          elevation: 0,
-          margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: Colors.grey.shade200),
-          ),
-          child: ListTile(
-            leading: const CircleAvatar(backgroundColor: Color(0xFF4F46E5), child: Icon(Icons.person, color: Colors.white, size: 20)),
-            title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: evaluatedByAI ? const Text("AI Scanned/Evaluated", style: TextStyle(color: Colors.purple, fontSize: 12, fontWeight: FontWeight.bold)) : null,
-            trailing: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-              child: Text("$marks / ${widget.totalMarks}", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+        return GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => TeacherQuizEvaluationScreen(
+                  studentName: name, quizType: widget.quizType, score: marks, totalMarks: widget.totalMarks,
+                  detailedAnswers: detailedAnswers, aiFeedback: aiFeedback,
+                ),
+              ),
+            );
+          },
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.shade200),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
             ),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => TeacherQuizEvaluationScreen(
-                    studentName: name,
-                    quizType: widget.quizType,
-                    score: marks,
-                    totalMarks: widget.totalMarks,
-                    detailedAnswers: detailedAnswers,
-                    aiFeedback: aiFeedback,
+            child: Row(
+              children: [
+                const CircleAvatar(backgroundColor: Color(0xFF4F46E5), child: Icon(Icons.person, color: Colors.white, size: 20)),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      if (evaluatedByAI)
+                        const Text("AI Scanned/Evaluated", style: TextStyle(color: Colors.purple, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ],
                   ),
                 ),
-              );
-            },
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                  child: Text("$marks / ${widget.totalMarks}", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -193,7 +252,7 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
   }
 
   // ==========================================
-  // SCANNING TAB
+  // SCANNING TAB (🔥 ListTile Removed, Used Safe Custom Row)
   // ==========================================
   Widget _buildScanningList(List students) {
     if (students.isEmpty) return const Center(child: Text("No students enrolled in this course."));
@@ -202,25 +261,44 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
       itemCount: students.length,
       itemBuilder: (context, index) {
         final s = students[index];
-        return Card(
-          elevation: 0,
+        final studentName = s["name"] ?? "Enrolled Student";
+        final studentId = s["_id"] ?? s["id"] ?? "";
+
+        return Container(
           margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: Colors.grey.shade200),
+            border: Border.all(color: Colors.grey.shade200),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
           ),
-          child: ListTile(
-            leading: const CircleAvatar(backgroundColor: Color(0xFF7C3AED), child: Icon(Icons.person_search, color: Colors.white, size: 20)),
-            title: Text(s["name"] ?? "Enrolled Student", style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: const Text("Ready for AI Paper Scanning", style: TextStyle(fontSize: 12)),
-            trailing: ElevatedButton.icon(
-              onPressed: () {
-                // Trigger Camera Scanning for THIS specific student and THIS quizId
-              },
-              icon: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
-              label: const Text("Scan Now", style: TextStyle(color: Colors.white)),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4F46E5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-            ),
+          child: Row(
+            children: [
+              const CircleAvatar(backgroundColor: Color(0xFF7C3AED), child: Icon(Icons.person_search, color: Colors.white, size: 20)),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(studentName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    const SizedBox(height: 2),
+                    const Text("Ready for AI Paper Scanning", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  ],
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () => _startScanningProcess(context, studentId, studentName),
+                icon: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                label: const Text("Scan", style: TextStyle(color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4F46E5),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  elevation: 0,
+                ),
+              ),
+            ],
           ),
         );
       },
