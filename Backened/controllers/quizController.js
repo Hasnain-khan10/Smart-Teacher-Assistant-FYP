@@ -162,9 +162,9 @@ exports.getQuizzesByCourse = async (req, res) => {
   }
 };
 
-// =======================================
-// GET QUIZ RESULTS (TEACHER VIEW)
-// =======================================
+// =======================================================
+// GET QUIZ RESULTS (TEACHER VIEW - WITH MCQS BREAKDOWN FIX)
+// =======================================================
 exports.getQuizResults = async (req, res) => {
   try {
     const quizId = req.params.quizId;
@@ -173,21 +173,59 @@ exports.getQuizResults = async (req, res) => {
     if (!quiz) return res.status(404).json({ message: "Quiz not found" });
 
     const attempts = await Attempt.find({ quiz: quizId }).populate("student", "name email");
+
     const results = attempts.map((a) => {
       const evaluatedByAI = a.evaluatedByAI || false;
+      let detailedAnswers = [];
+
+      // MCQ Quiz Breakdown
+      if (quiz.type === "mcq") {
+        detailedAnswers = quiz.questions.map((q, idx) => {
+          const studentAnsObj = a.answers && a.answers[idx] ? a.answers[idx] : {};
+          const studentAnswer = studentAnsObj.selectedAnswer || "Not Answered";
+          const isCorrect = studentAnswer === q.correctAnswer;
+
+          return {
+            question_text: q.question, // Updated to match Flutter
+            student_answer: studentAnswer, // Updated to match Flutter
+            correct_answer: q.correctAnswer, // Updated to match Flutter
+            isCorrect: isCorrect,
+            obtained_marks: isCorrect ? (q.marks || 1) : 0 // Updated to match Flutter
+          };
+        });
+      }
+      // AI Vision Scan Descriptive Quiz Breakdown
+      else if (evaluatedByAI) {
+        detailedAnswers = (a.answers || []).map((ans) => ({
+          // Fallbacks for both old format and new strict AI format
+          question_text: ans.question_text || ans.question || "Question",
+          student_answer: ans.student_answer || ans.studentAnswer || ans.selectedAnswer || "",
+          correct_answer: ans.correct_answer || ans.correctAnswer || "See Rubric/Exam Key",
+          isCorrect: ans.isCorrect ?? (Number(ans.obtained_marks || ans.marksObtained) > 0),
+          obtained_marks: ans.obtained_marks ?? ans.marksObtained ?? 0
+        }));
+      }
+
       return {
-        studentId: a.student._id, name: a.student.name, email: a.student.email,
-        score: a.score ?? 0, totalMarks: a.total ?? quiz.totalMarks, evaluatedByAI,
+        studentId: a.student._id,
+        name: a.student.name,
+        email: a.student.email,
+        score: a.score ?? 0,
+        totalMarks: a.total ?? quiz.totalMarks,
+        evaluatedByAI,
         percentage: a.total > 0 ? ((a.score / a.total) * 100).toFixed(2) : "0.00",
+        detailedAnswers // Sending correct keys to Flutter
       };
     });
 
-    return res.status(200).json({ quiz: { id: quiz._id, title: quiz.title, course: quiz.course?.title, totalMarks: quiz.totalMarks }, results });
+    return res.status(200).json({
+      quiz: { id: quiz._id, title: quiz.title, course: quiz.course?.title, totalMarks: quiz.totalMarks },
+      results
+    });
   } catch (error) {
     return res.status(500).json({ message: "Failed to fetch quiz results", error: error.message });
   }
 };
-
 // ================================
 // ATTEMPT QUIZ
 // ================================
@@ -233,7 +271,7 @@ exports.deleteQuiz = async (req, res) => {
   }
 };
 // ================================
-// UPDATE QUIZ (Yeh miss ho gaya tha)
+// UPDATE QUIZ (ALL TYPES SUPPORTED)
 // ================================
 exports.updateQuiz = async (req, res) => {
   try {
@@ -246,8 +284,23 @@ exports.updateQuiz = async (req, res) => {
       return res.status(404).json({ message: "Quiz not found" });
     }
 
-    quiz.title = req.body.title || quiz.title;
-    quiz.questions = req.body.questions || quiz.questions;
+    // 1. Update Title if provided
+    if (req.body.title) quiz.title = req.body.title;
+
+    // 2. Update Questions based on what is provided
+    if (req.body.questions) quiz.questions = req.body.questions;
+    if (req.body.shortQuestions) quiz.shortQuestions = req.body.shortQuestions;
+    if (req.body.longQuestions) quiz.longQuestions = req.body.longQuestions;
+
+    // 3. Auto-Recalculate Total Marks
+    let total = 0;
+    if (quiz.type === "mcq") {
+      total = quiz.questions.reduce((sum, q) => sum + (q.marks || 1), 0);
+    } else {
+      total += (quiz.shortQuestions || []).reduce((sum, q) => sum + (q.marks || 0), 0);
+      total += (quiz.longQuestions || []).reduce((sum, q) => sum + (q.marks || 0), 0);
+    }
+    quiz.totalMarks = total;
 
     await quiz.save();
 
@@ -259,29 +312,26 @@ exports.updateQuiz = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-// =========================================
-// 🔥 VISION-BASED AI QUIZ SCANNING (MISSING FUNCTION RESTORED)
-// =========================================
+// =========================================================
+// 🔥 VISION-BASED AI QUIZ SCANNING
+// =========================================================
 exports.scanAIQuizMarks = async (req, res) => {
   try {
-    const { courseId, studentId, title } = req.body;
+    const { courseId, studentId, title, quizId } = req.body;
 
-    if (!courseId || !studentId || !title) {
-      return res.status(400).json({
-        message: "courseId, studentId and title required",
-      });
+    if (!courseId || !studentId || !quizId) {
+      return res.status(400).json({ message: "courseId, studentId, and quizId are required" });
     }
 
     if (!req.files || req.files.length === 0) {
-      return res.status(400).json({
-        message: "Answer sheet images required",
-      });
+      return res.status(400).json({ message: "Answer sheet images required" });
     }
 
     const course = await Course.findById(courseId);
-    if (!course) {
-      return res.status(404).json({ message: "Course not found" });
-    }
+    if (!course) return res.status(404).json({ message: "Course not found" });
+
+    const originalQuiz = await Quiz.findById(quizId);
+    if (!originalQuiz) return res.status(404).json({ message: "Original Quiz not found" });
 
     const images = [];
     for (const file of req.files) {
@@ -289,41 +339,64 @@ exports.scanAIQuizMarks = async (req, res) => {
       await sharp(file.path)
         .rotate()
         .resize({ width: 1800, withoutEnlargement: true })
-        .jpeg({ quality: 80 })
+        .jpeg({ quality: 60 })
         .toFile(optimizedPath);
 
       const imageBuffer = fs.readFileSync(optimizedPath);
       images.push(imageBuffer.toString("base64"));
     }
 
-    const visionPrompt = `You are an expert university paper checker. Return ONLY valid JSON format with "questions" array and "evaluation" object. Evaluate marks fairly.`;
+    const visionPrompt = `You are an expert university paper checker. Evaluate marks fairly out of total marks ${originalQuiz.totalMarks}.`;
 
     const aiData = await callAI({ prompt: visionPrompt, images });
 
-    if (!aiData || !aiData.evaluation) {
+    if (!aiData || (!aiData.evaluation && !aiData.detailedAnswers)) {
       return res.status(500).json({ message: "Invalid AI response" });
     }
 
-    let score = Number(aiData.evaluation.score) || 0;
-    let totalMarks = Number(aiData.evaluation.totalMarks) || 0;
+    // Update variables based on strict JSON format from aiService
+    let score = Number(aiData.evaluation?.total_obtained_marks || aiData.evaluation?.score) || 0;
+    let totalMarks = Number(aiData.evaluation?.total_max_marks || aiData.evaluation?.totalMarks) || originalQuiz.totalMarks;
     score = Math.max(0, Math.min(score, totalMarks));
     const percentage = totalMarks > 0 ? ((score / totalMarks) * 100).toFixed(2) : 0;
 
-    const quiz = await Quiz.create({
-      course: courseId, teacher: req.user._id, title, type: "question", shortQuestions: [], longQuestions: [], totalMarks, isAIScanned: true,
-      examMeta: { generatedBy: "AI_VISION", scanType: "HANDWRITING_ANALYSIS", pages: req.files.length, scannedAt: new Date() },
-    });
+    const answersArray = aiData.detailedAnswers || aiData.questions || [];
 
-    const attempt = await Attempt.create({
-      student: studentId, quiz: quiz._id, answers: aiData.questions || [], score, total: totalMarks, evaluatedByAI: true, scannedPaper: req.files.map((f) => f.filename).join(","),
-    });
+    originalQuiz.isAIScanned = true;
+    await originalQuiz.save();
+
+    let attempt = await Attempt.findOne({ student: studentId, quiz: quizId });
+
+    if (attempt) {
+      attempt.answers = answersArray;
+      attempt.score = score;
+      attempt.total = totalMarks;
+      attempt.evaluatedByAI = true;
+      attempt.scannedPaper = req.files.map((f) => f.filename).join(",");
+      await attempt.save();
+    } else {
+      attempt = await Attempt.create({
+        student: studentId,
+        quiz: quizId,
+        answers: answersArray,
+        score,
+        total: totalMarks,
+        evaluatedByAI: true,
+        scannedPaper: req.files.map((f) => f.filename).join(","),
+      });
+    }
 
     for (const file of req.files) {
       const optimizedPath = path.join(__dirname, `../uploads/optimized-${file.filename}.jpg`);
       if (fs.existsSync(optimizedPath)) fs.unlinkSync(optimizedPath);
     }
 
-    return res.status(200).json({ message: "AI answer sheet scanning completed successfully", quiz, attempt, evaluation: { score, totalMarks, percentage } });
+    return res.status(200).json({
+      message: "AI answer sheet scanning completed successfully",
+      quiz: originalQuiz,
+      attempt,
+      evaluation: { score, totalMarks, percentage }
+    });
 
   } catch (error) {
     console.log("❌ VISION SCAN ERROR:", error);

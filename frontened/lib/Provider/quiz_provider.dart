@@ -122,14 +122,26 @@ class QuizProvider with ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>?> scanAIQuizMarks({String? courseId, String? studentId, String? title, List<File>? files, dynamic arg1}) async {
+  Future<Map<String, dynamic>?> scanAIQuizMarks({
+    String? courseId,
+    String? studentId,
+    String? title,
+    String? quizId, // 🔥 FIX: quizId add kiya
+    List<File>? files,
+    dynamic arg1
+  }) async {
     _isScanningAI = true;
     _error = null;
     notifyListeners();
     try {
-      final result = await _quizService.scanAIQuizMarks(courseId: courseId ?? "", studentId: studentId ?? "", title: title ?? "", files: files ?? []);
+      final result = await _quizService.scanAIQuizMarks(
+          courseId: courseId ?? "",
+          studentId: studentId ?? "",
+          title: title ?? "",
+          quizId: quizId ?? "", // 🔥 FIX pass to service
+          files: files ?? []
+      );
       _scanResult = result;
-      await fetchAllQuizzes();
       return result;
     } catch (e) {
       _error = e.toString().replaceAll("Exception:", "").trim();
@@ -140,12 +152,26 @@ class QuizProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> updateQuiz({required String quizId, required String courseId, String? title, List<Map<String, dynamic>>? questions}) async {
+  Future<bool> updateQuiz({
+    required String quizId,
+    required String courseId,
+    String? title,
+    List<Map<String, dynamic>>? questions,
+    List<Map<String, dynamic>>? shortQuestions,
+    List<Map<String, dynamic>>? longQuestions,
+  }) async {
     _isUpdating = true;
     _error = null;
     notifyListeners();
     try {
-      final success = await _quizService.updateQuiz(quizId: quizId, title: title, questions: questions);
+      final success = await _quizService.updateQuiz(
+        quizId: quizId,
+        title: title,
+        questions: questions,
+        shortQuestions: shortQuestions,
+        longQuestions: longQuestions,
+      );
+      // 🔥 Success ke baad foran fetch karega taake naya data teacher aur student dono ko mile!
       if (success) await fetchQuizzes(courseId);
       return success;
     } catch (e) {
@@ -242,7 +268,8 @@ class QuizProvider with ChangeNotifier {
   }
 
   void reset() {
-    _quizzes.clear();
+    // 🔥 FIX: Yahan se '_quizzes.clear();' HATA DIYA HAI!
+    // Ab screen back karne par pichli list gayab nahi hogi!
     _isLoading = false; _isCreating = false; _isUpdating = false; _isDeleting = false;
     _isAttempting = false; _isGeneratingAI = false; _isGeneratingPdf = false;
     _quizResults = null; _isLoadingQuizResults = false; _error = null;

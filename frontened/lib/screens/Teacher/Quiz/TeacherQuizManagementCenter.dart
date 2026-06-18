@@ -7,6 +7,8 @@ import 'package:frontened/Provider/quiz_provider.dart';
 import 'package:frontened/screens/Teacher/Quiz/TeacherQuizPreviewScreen.dart';
 import 'package:frontened/screens/Teacher/Quiz/TeacherQuizEvaluationScreen.dart';
 import 'package:frontened/screens/Teacher/Quiz/TeacherScannerOverlay.dart';
+// 🔥 LAZMI IMPORT YAHAN ADD KIYA HAI 🔥
+import 'package:frontened/screens/Teacher/Quiz/TeacherEditQuizScreen.dart';
 
 class TeacherQuizManagementCenter extends StatefulWidget {
   final String quizId;
@@ -35,12 +37,12 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
   void initState() {
     super.initState();
     Future.microtask(() {
+      context.read<QuizProvider>().reset();
       context.read<QuizProvider>().fetchQuizResults(widget.quizId, quizId: widget.quizId);
       context.read<CourseProvider>().fetchCourseStudents(widget.courseId);
     });
   }
 
-  // 🔥 AI AUTO-GRADING FUNCTION (Ab False Success nahi dikhayega!)
   Future<void> _startScanningProcess(BuildContext context, String studentId, String studentName) async {
     final List<File>? scannedPages = await Navigator.push(
       context,
@@ -70,17 +72,16 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
         ),
       );
 
-      // 1. Send files to AI Backend
       final result = await context.read<QuizProvider>().scanAIQuizMarks(
         courseId: widget.courseId,
         studentId: studentId,
         title: widget.quizTitle,
+        quizId: widget.quizId,
         files: scannedPages,
       );
 
-      if (mounted) Navigator.pop(context); // Loading dialog band karein
+      if (mounted) Navigator.pop(context);
 
-      // 2. CHECK IF ACTUAL RESULT CAME BACK
       if (result != null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -91,11 +92,10 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
           setState(() => _activeView = "results");
         }
       } else {
-        // 🔥 AGAR ERROR AAYA HAI TO YAHAN SHOW HOGA
-        final errorMessage = context.read<QuizProvider>().error ?? "Backend failed to process image. Check Node.js console.";
+        final errorMessage = context.read<QuizProvider>().error ?? "Server Overloaded. Try again.";
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("❌ Scan Failed: $errorMessage"), backgroundColor: Colors.red, duration: const Duration(seconds: 4)),
+            SnackBar(content: Text("❌ Scan Failed: $errorMessage"), backgroundColor: Colors.red),
           );
         }
       }
@@ -109,6 +109,11 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
 
     final results = (quizProvider.quizResults?["results"] as List?) ?? [];
     final enrolledStudents = courseProvider.courseStudents;
+    final bool isMcqQuiz = widget.quizType.toLowerCase() == "mcq";
+
+    // 🔥 CACHE LEAK FIX: Check karein ke jo data screen par hai wo isi current QuizId ka hai ya nahi!
+    final String? currentFetchedQuizId = quizProvider.quizResults?["quiz"]?["id"]?.toString();
+    final bool isDataMatching = currentFetchedQuizId == widget.quizId;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -118,8 +123,9 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
         title: Text(widget.quizTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          // 1. View Key Button
           Padding(
-            padding: const EdgeInsets.only(right: 8.0),
+            padding: const EdgeInsets.only(right: 4.0),
             child: TextButton.icon(
               onPressed: () {
                 try {
@@ -130,30 +136,90 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
                 }
               },
               icon: const Icon(Icons.vpn_key, color: Colors.yellowAccent, size: 18),
-              label: const Text("View Key", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              label: const Text("Key", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               style: TextButton.styleFrom(backgroundColor: Colors.white12, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
             ),
+          ),
+
+          // 2. Edit & Delete Menu (Three Dots)
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.white),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            onSelected: (value) async {
+              if (value == 'edit') {
+                // 🔥 EDIT OPTION ADDED SAFELY 🔥
+                try {
+                  final fullQuiz = context.read<QuizProvider>().quizzes.firstWhere((q) => q.id == widget.quizId);
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => TeacherEditQuizScreen(quiz: fullQuiz, courseId: widget.courseId))
+                  );
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Quiz data is loading, please wait..."), backgroundColor: Colors.orange)
+                  );
+                }
+              }
+              else if (value == 'delete') {
+                // Delete Confirmation Dialog
+                final bool confirm = await showDialog(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    title: const Row(children: [Icon(Icons.warning, color: Colors.red), SizedBox(width: 8), Text("Delete Quiz?")]),
+                    content: const Text("Are you sure you want to permanently delete this quiz? All student attempts will also be removed."),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text("Delete", style: TextStyle(color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                ) ?? false;
+
+                // Agar Teacher ne Delete confirm kiya:
+                if (confirm && mounted) {
+                  final success = await context.read<QuizProvider>().deleteQuiz(quizId: widget.quizId, courseId: widget.courseId);
+                  if (success && mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Quiz Deleted Successfully!"), backgroundColor: Colors.green));
+                    Navigator.pop(context); // Wapas course screen par bhej do
+                  } else if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("❌ Failed to delete quiz."), backgroundColor: Colors.red));
+                  }
+                }
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit, color: Colors.blue, size: 20), SizedBox(width: 10), Text("Edit Quiz")])),
+              const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete, color: Colors.red, size: 20), SizedBox(width: 10), Text("Delete Quiz", style: TextStyle(color: Colors.red))])),
+            ],
           )
         ],
       ),
-      body: Column(
+      body: (quizProvider.isLoadingQuizResults || !isDataMatching)
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF4F46E5)))
+          : Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            color: Colors.white,
-            child: Container(
-              height: 50,
-              decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
-              child: Row(
-                children: [
-                  _toggleButton("Results View", "results", Icons.analytics_outlined),
-                  _toggleButton("AI Scanning", "scanning", Icons.document_scanner_outlined),
-                ],
+          if (!isMcqQuiz)
+            Container(
+              padding: const EdgeInsets.all(12),
+              color: Colors.white,
+              child: Container(
+                height: 50,
+                decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
+                child: Row(
+                  children: [
+                    _toggleButton("Results View", "results", Icons.analytics_outlined),
+                    _toggleButton("AI Scanning", "scanning", Icons.document_scanner_outlined),
+                  ],
+                ),
               ),
             ),
-          ),
+
           Expanded(
-            child: _activeView == "results"
+            child: (isMcqQuiz || _activeView == "results")
                 ? _buildResultsList(results)
                 : _buildScanningList(enrolledStudents),
           ),
@@ -186,9 +252,6 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
     );
   }
 
-  // ==========================================
-  // RESULTS TAB (🔥 ListTile Removed, Used Safe Custom Row)
-  // ==========================================
   Widget _buildResultsList(List results) {
     if (results.isEmpty) return const Center(child: Text("No student attempts recorded yet."));
     return ListView.builder(
@@ -201,7 +264,7 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
         final evaluatedByAI = r["evaluatedByAI"] ?? false;
 
         final List detailedAnswers = r["detailedAnswers"] ?? [];
-        final String aiFeedback = r["aiFeedback"] ?? "AI has evaluated this paper successfully. Further insights will be available soon.";
+        final String aiFeedback = r["aiFeedback"] ?? "Evaluation successfully loaded.";
 
         return GestureDetector(
           onTap: () {
@@ -251,9 +314,6 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
     );
   }
 
-  // ==========================================
-  // SCANNING TAB (🔥 ListTile Removed, Used Safe Custom Row)
-  // ==========================================
   Widget _buildScanningList(List students) {
     if (students.isEmpty) return const Center(child: Text("No students enrolled in this course."));
     return ListView.builder(

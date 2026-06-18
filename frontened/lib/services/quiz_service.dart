@@ -66,21 +66,51 @@ class QuizService {
     throw Exception(data['message'] ?? "Failed to submit attempt");
   }
 
-  Future<Map<String, dynamic>> scanAIQuizMarks({required String courseId, required String studentId, required String title, required List<File> files}) async {
-    final request = http.MultipartRequest("POST", Uri.parse("${Api.baseUrl}/ai/scan"));
+  Future<Map<String, dynamic>> scanAIQuizMarks({
+    required String courseId,
+    required String studentId,
+    required String title,
+    required String quizId, // 🔥 FIX: quizId parameter add kiya
+    required List<File> files
+  }) async {
+    final request = http.MultipartRequest("POST", Uri.parse("${Api.baseUrl}/quizzes/scan-ai-marks"));
     request.headers.addAll(await _multipartHeaders());
     request.fields['courseId'] = courseId;
     request.fields['studentId'] = studentId;
     request.fields['title'] = title;
-    for (var file in files) { request.files.add(await http.MultipartFile.fromPath('files', file.path)); }
-    final response = await http.Response.fromStream(await request.send());
-    final data = jsonDecode(response.body);
-    if (response.statusCode == 200) return data;
-    throw Exception(data['message'] ?? "Scan failed");
+    request.fields['quizId'] = quizId; // 🔥 FIX: fields mein add kiya
+
+    for (var file in files) {
+      request.files.add(await http.MultipartFile.fromPath('files', file.path));
+    }
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+
+    if (response.statusCode != 200) {
+      throw Exception("Backend Error (${response.statusCode}): ${response.body}");
+    }
+
+    return jsonDecode(response.body);
   }
 
-  Future<bool> updateQuiz({required String quizId, String? title, List? questions}) async {
-    final response = await http.put(Uri.parse("${Api.baseUrl}/quizzes/$quizId"), headers: await _headers(), body: jsonEncode({"title": title ?? "Updated Quiz", "questions": questions ?? []}));
+  Future<bool> updateQuiz({
+    required String quizId,
+    String? title,
+    List? questions,
+    List? shortQuestions,
+    List? longQuestions,
+  }) async {
+    final response = await http.put(
+        Uri.parse("${Api.baseUrl}/quizzes/$quizId"),
+        headers: await _headers(),
+        body: jsonEncode({
+          if (title != null) "title": title,
+          if (questions != null) "questions": questions,
+          if (shortQuestions != null) "shortQuestions": shortQuestions,
+          if (longQuestions != null) "longQuestions": longQuestions,
+        })
+    );
     return response.statusCode == 200;
   }
 
@@ -111,16 +141,11 @@ class QuizService {
     return null;
   }
 
-  // ==========================================
-  // AI EXAM ENGINE (FIXED FOR OPTIONAL FILE)
-  // ==========================================
-
-  // 🔥 FIX: File? file kar diya gaya hai
   Future<Map<String, dynamic>> createAIMCQQuiz({
     required String courseId, required String prompt, required String difficulty,
     required int questionCount, required int marksPerQuestion, File? file
   }) async {
-    final url = Uri.parse("${Api.baseUrl}/ai/quizzes/mcq");
+    final url = Uri.parse("${Api.baseUrl}/ai/quizzes/mcq"); // Double check this matches backend too if needed later
     if (file != null && file.path.isNotEmpty) {
       final req = http.MultipartRequest("POST", url)..headers.addAll(await _multipartHeaders());
       req.fields.addAll({
@@ -145,12 +170,11 @@ class QuizService {
     }
   }
 
-  // 🔥 FIX: File? file kar diya gaya hai
   Future<Map<String, dynamic>> createAIQuestionQuiz({
     required String courseId, required String prompt, required String difficulty, required String type,
     File? file, int? shortCount, int? shortMarks, int? shortEachMark, int? longCount, int? longMarks, int? longEachMark
   }) async {
-    final url = Uri.parse("${Api.baseUrl}/ai/quizzes/descriptive");
+    final url = Uri.parse("${Api.baseUrl}/ai/quizzes/descriptive"); // Double check this matches backend too if needed later
     if (file != null && file.path.isNotEmpty) {
       final req = http.MultipartRequest("POST", url)..headers.addAll(await _multipartHeaders());
       req.fields.addAll({
