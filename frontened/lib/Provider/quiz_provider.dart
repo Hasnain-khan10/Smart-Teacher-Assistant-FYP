@@ -15,6 +15,8 @@ class QuizProvider with ChangeNotifier {
   bool _isGeneratingAI = false;
   bool _isGeneratingPdf = false;
   bool _isScanningAI = false;
+  bool _isUpdatingManualScore = false; // 🔥 Naya state
+
   Map<String, dynamic>? _scanResult;
   bool _isLoadingQuizResults = false;
   Map<String, dynamic>? _quizResults;
@@ -29,251 +31,145 @@ class QuizProvider with ChangeNotifier {
   bool get isGeneratingAI => _isGeneratingAI;
   bool get isGeneratingPdf => _isGeneratingPdf;
   bool get isScanningAI => _isScanningAI;
+  bool get isUpdatingManualScore => _isUpdatingManualScore; // 🔥 Getter
   Map<String, dynamic>? get scanResult => _scanResult;
   bool get isLoadingQuizResults => _isLoadingQuizResults;
   Map<String, dynamic>? get quizResults => _quizResults;
   String? get error => _error;
 
-  void clearError() {
-    _error = null;
-    notifyListeners();
-  }
+  void clearError() { _error = null; notifyListeners(); }
 
-  Future<void> fetchAllQuizzes() async {
-    _isLoading = true;
+  // 🔥 NEW FUNCTION: Call to update score manually
+  Future<bool> updateManualMarks({required String attemptId, required int manualScore, required String quizId}) async {
+    _isUpdatingManualScore = true;
     _error = null;
     notifyListeners();
     try {
-      _quizzes = await _quizService.getAllQuizzes();
-    } catch (e) {
-      _error = e.toString().replaceAll("Exception:", "").trim();
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<Map<String, dynamic>?> fetchQuizResults(dynamic positionalId, {String? quizId}) async {
-    _isLoadingQuizResults = true;
-    _error = null;
-    notifyListeners();
-    try {
-      String finalQuizId = quizId ?? positionalId?.toString() ?? "";
-      final result = await _quizService.getTeacherQuizResults(quizId: finalQuizId);
-      _quizResults = result;
-      return result;
-    } catch (e) {
-      _error = e.toString().replaceAll("Exception:", "").trim();
-      return null;
-    } finally {
-      _isLoadingQuizResults = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> fetchQuizzes(String courseId) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-    try {
-      _quizzes = await _quizService.getQuizzesByCourse(courseId);
-    } catch (e) {
-      _error = e.toString().replaceAll("Exception:", "").trim();
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<bool> createQuiz({
-    required String courseId, required String title, required String type,
-    List<Map<String, dynamic>>? questions, List<Map<String, dynamic>>? shortQuestions, List<Map<String, dynamic>>? longQuestions,
-  }) async {
-    _isCreating = true;
-    _error = null;
-    notifyListeners();
-    try {
-      final success = await _quizService.createQuiz(courseId: courseId, title: title, type: type, questions: questions, shortQuestions: shortQuestions, longQuestions: longQuestions);
-      if (success) await fetchQuizzes(courseId);
+      final success = await _quizService.updateManualMarks(attemptId: attemptId, manualScore: manualScore);
+      if (success) {
+        await fetchQuizResults(quizId); // Refresh result screen
+      }
       return success;
     } catch (e) {
       _error = e.toString().replaceAll("Exception:", "").trim();
       return false;
     } finally {
-      _isCreating = false;
+      _isUpdatingManualScore = false;
       notifyListeners();
     }
   }
 
+  // ============== Baqi Purana Code Bilkul Same ==============
+  Future<void> fetchAllQuizzes() async {
+    _isLoading = true; _error = null; notifyListeners();
+    try { _quizzes = await _quizService.getAllQuizzes(); }
+    catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); }
+    finally { _isLoading = false; notifyListeners(); }
+  }
+
+  Future<Map<String, dynamic>?> fetchQuizResults(dynamic positionalId, {String? quizId}) async {
+    _isLoadingQuizResults = true; _error = null; notifyListeners();
+    try {
+      String finalQuizId = quizId ?? positionalId?.toString() ?? "";
+      final result = await _quizService.getTeacherQuizResults(quizId: finalQuizId);
+      _quizResults = result; return result;
+    } catch (e) {
+      _error = e.toString().replaceAll("Exception:", "").trim(); return null;
+    } finally { _isLoadingQuizResults = false; notifyListeners(); }
+  }
+
+  Future<void> fetchQuizzes(String courseId) async {
+    _isLoading = true; _error = null; notifyListeners();
+    try { _quizzes = await _quizService.getQuizzesByCourse(courseId); }
+    catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); }
+    finally { _isLoading = false; notifyListeners(); }
+  }
+
+  Future<bool> createQuiz({required String courseId, required String title, required String type, List<Map<String, dynamic>>? questions, List<Map<String, dynamic>>? shortQuestions, List<Map<String, dynamic>>? longQuestions,}) async {
+    _isCreating = true; _error = null; notifyListeners();
+    try {
+      final success = await _quizService.createQuiz(courseId: courseId, title: title, type: type, questions: questions, shortQuestions: shortQuestions, longQuestions: longQuestions);
+      if (success) await fetchQuizzes(courseId); return success;
+    } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return false; }
+    finally { _isCreating = false; notifyListeners(); }
+  }
+
   Future<Map<String, dynamic>?> attemptQuiz(dynamic arg1, {String? quizId, List<Map<String, dynamic>>? answers}) async {
-    _isAttempting = true;
-    _error = null;
-    notifyListeners();
+    _isAttempting = true; _error = null; notifyListeners();
     try {
       String targetQuizId = quizId ?? (arg1 is String ? arg1 : "");
       final result = await _quizService.attemptQuiz(quizId: targetQuizId, answers: answers ?? []);
       return result;
-    } catch (e) {
-      _error = e.toString().replaceAll("Exception:", "").trim();
-      return null;
-    } finally {
-      _isAttempting = false;
-      notifyListeners();
-    }
+    } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return null; }
+    finally { _isAttempting = false; notifyListeners(); }
   }
 
-  Future<Map<String, dynamic>?> scanAIQuizMarks({
-    String? courseId,
-    String? studentId,
-    String? title,
-    String? quizId, // 🔥 FIX: quizId add kiya
-    List<File>? files,
-    dynamic arg1
-  }) async {
-    _isScanningAI = true;
-    _error = null;
-    notifyListeners();
+  Future<Map<String, dynamic>?> scanAIQuizMarks({String? courseId, String? studentId, String? title, String? quizId, List<File>? files, dynamic arg1}) async {
+    _isScanningAI = true; _error = null; notifyListeners();
     try {
-      final result = await _quizService.scanAIQuizMarks(
-          courseId: courseId ?? "",
-          studentId: studentId ?? "",
-          title: title ?? "",
-          quizId: quizId ?? "", // 🔥 FIX pass to service
-          files: files ?? []
-      );
-      _scanResult = result;
-      return result;
-    } catch (e) {
-      _error = e.toString().replaceAll("Exception:", "").trim();
-      return null;
-    } finally {
-      _isScanningAI = false;
-      notifyListeners();
-    }
+      final result = await _quizService.scanAIQuizMarks(courseId: courseId ?? "", studentId: studentId ?? "", title: title ?? "", quizId: quizId ?? "", files: files ?? []);
+      _scanResult = result; return result;
+    } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return null; }
+    finally { _isScanningAI = false; notifyListeners(); }
   }
 
-  Future<bool> updateQuiz({
-    required String quizId,
-    required String courseId,
-    String? title,
-    List<Map<String, dynamic>>? questions,
-    List<Map<String, dynamic>>? shortQuestions,
-    List<Map<String, dynamic>>? longQuestions,
-  }) async {
-    _isUpdating = true;
-    _error = null;
-    notifyListeners();
+  Future<bool> updateQuiz({required String quizId, required String courseId, String? title, List<Map<String, dynamic>>? questions, List<Map<String, dynamic>>? shortQuestions, List<Map<String, dynamic>>? longQuestions,}) async {
+    _isUpdating = true; _error = null; notifyListeners();
     try {
-      final success = await _quizService.updateQuiz(
-        quizId: quizId,
-        title: title,
-        questions: questions,
-        shortQuestions: shortQuestions,
-        longQuestions: longQuestions,
-      );
-      // 🔥 Success ke baad foran fetch karega taake naya data teacher aur student dono ko mile!
-      if (success) await fetchQuizzes(courseId);
-      return success;
-    } catch (e) {
-      _error = e.toString().replaceAll("Exception:", "").trim();
-      return false;
-    } finally {
-      _isUpdating = false;
-      notifyListeners();
-    }
+      final success = await _quizService.updateQuiz(quizId: quizId, title: title, questions: questions, shortQuestions: shortQuestions, longQuestions: longQuestions);
+      if (success) await fetchQuizzes(courseId); return success;
+    } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return false; }
+    finally { _isUpdating = false; notifyListeners(); }
   }
 
   Future<bool> deleteQuiz({required String quizId, required String courseId}) async {
-    _isDeleting = true;
-    _error = null;
-    notifyListeners();
+    _isDeleting = true; _error = null; notifyListeners();
     try {
       final success = await _quizService.deleteQuiz(quizId);
-      if (success) _quizzes.removeWhere((q) => q.id == quizId);
-      return success;
-    } catch (e) {
-      _error = e.toString().replaceAll("Exception:", "").trim();
-      return false;
-    } finally {
-      _isDeleting = false;
-      notifyListeners();
-    }
+      if (success) _quizzes.removeWhere((q) => q.id == quizId); return success;
+    } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return false; }
+    finally { _isDeleting = false; notifyListeners(); }
   }
 
-  // 🔥 Yahan File ko optional (File? file) kar diya gaya hai
   Future<Map<String, dynamic>?> createAIMCQQuiz({required String courseId, required String prompt, required String difficulty, required int questionCount, required int marksPerQuestion, File? file}) async {
-    _isGeneratingAI = true;
-    _error = null;
-    notifyListeners();
+    _isGeneratingAI = true; _error = null; notifyListeners();
     try {
       final result = await _quizService.createAIMCQQuiz(courseId: courseId, prompt: prompt, difficulty: difficulty, questionCount: questionCount, marksPerQuestion: marksPerQuestion, file: file);
-      await fetchQuizzes(courseId);
-      return result;
-    } catch (e) {
-      _error = e.toString().replaceAll("Exception:", "").trim();
-      return null;
-    } finally {
-      _isGeneratingAI = false;
-      notifyListeners();
-    }
+      await fetchQuizzes(courseId); return result;
+    } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return null; }
+    finally { _isGeneratingAI = false; notifyListeners(); }
   }
 
-  // 🔥 Yahan bhi File ko optional (File? file) kar diya gaya hai
   Future<Map<String, dynamic>?> createAIQuestionQuiz({required String courseId, required String prompt, required String difficulty, required String type, File? file, int? shortCount, int? shortMarks, int? shortEachMark, int? longCount, int? longMarks, int? longEachMark}) async {
-    _isGeneratingAI = true;
-    _error = null;
-    notifyListeners();
+    _isGeneratingAI = true; _error = null; notifyListeners();
     try {
       final result = await _quizService.createAIQuestionQuiz(courseId: courseId, prompt: prompt, file: file, difficulty: difficulty, type: type, shortCount: shortCount, shortMarks: shortMarks, shortEachMark: shortEachMark, longCount: longCount, longMarks: longMarks, longEachMark: longEachMark);
-      await fetchQuizzes(courseId);
-      return result;
-    } catch (e) {
-      _error = e.toString().replaceAll("Exception:", "").trim();
-      return null;
-    } finally {
-      _isGeneratingAI = false;
-      notifyListeners();
-    }
+      await fetchQuizzes(courseId); return result;
+    } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return null; }
+    finally { _isGeneratingAI = false; notifyListeners(); }
   }
 
   Future<String?> generateAIQuestionQuizPdf({required String quizId}) async {
-    _isGeneratingPdf = true;
-    _error = null;
-    notifyListeners();
-    try {
-      return await _quizService.generateAIQuestionQuizPdf(quizId: quizId);
-    } catch (e) {
-      _error = e.toString().replaceAll("Exception:", "").trim();
-      return null;
-    } finally {
-      _isGeneratingPdf = false;
-      notifyListeners();
-    }
+    _isGeneratingPdf = true; _error = null; notifyListeners();
+    try { return await _quizService.generateAIQuestionQuizPdf(quizId: quizId); }
+    catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return null; }
+    finally { _isGeneratingPdf = false; notifyListeners(); }
   }
 
   Future<String?> generateQuestionQuizPDF(dynamic positionalId, {String? quizId, String? courseId, String? title}) async {
-    _isGeneratingPdf = true;
-    _error = null;
-    notifyListeners();
+    _isGeneratingPdf = true; _error = null; notifyListeners();
     try {
       String finalQuizId = quizId ?? positionalId?.toString() ?? "";
       return await _quizService.generateQuestionQuizPDF(quizId: finalQuizId, courseId: courseId ?? "", title: title);
-    } catch (e) {
-      _error = e.toString().replaceAll("Exception:", "").trim();
-      return null;
-    } finally {
-      _isGeneratingPdf = false;
-      notifyListeners();
-    }
+    } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return null; }
+    finally { _isGeneratingPdf = false; notifyListeners(); }
   }
 
   void reset() {
-    // 🔥 FIX: Yahan se '_quizzes.clear();' HATA DIYA HAI!
-    // Ab screen back karne par pichli list gayab nahi hogi!
     _isLoading = false; _isCreating = false; _isUpdating = false; _isDeleting = false;
     _isAttempting = false; _isGeneratingAI = false; _isGeneratingPdf = false;
     _quizResults = null; _isLoadingQuizResults = false; _error = null;
-    _scanResult = null; _isScanningAI = false;
+    _scanResult = null; _isScanningAI = false; _isUpdatingManualScore = false;
     notifyListeners();
   }
 }

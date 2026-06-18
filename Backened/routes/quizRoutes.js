@@ -12,8 +12,9 @@ const {
   deleteQuiz,
   attemptQuiz,
   scanAIQuizMarks,
+  updateManualMarks, // 🔥 Imported perfectly
 
-  // 🔥 AI QUIZ
+  // AI QUIZ
   createAIMCQQuiz,
   createAIQuestionQuiz,
   generateAIQuestionQuizPDF,
@@ -33,7 +34,7 @@ router.get(
    "/pdf/:id",
   protect,
   authorizeRoles("teacher", "student"),
-  generateQuestionQuizPDF,
+  generateQuestionQuizPDF
 );
 
 // ===============================
@@ -48,15 +49,12 @@ router.get(
   getQuizResults
 );
 
-
 router.get(
   "/course/:courseId",
   protect,
   authorizeRoles("teacher", "student"),
   getQuizzesByCourse
 );
-
-
 
 // ===============================
 // 👨‍🎓 STUDENT ONLY (ATTEMPT)
@@ -68,7 +66,6 @@ router.post(
   attemptQuiz
 );
 
-
 router.post(
   "/scan-ai-marks",
   protect,
@@ -77,7 +74,15 @@ router.post(
   scanAIQuizMarks
 );
 
-
+// ===============================
+// 🔥 UPDATE MANUAL MARKS OVERRIDE
+// ===============================
+router.put(
+  "/manual-score/:attemptId",
+  protect,
+  authorizeRoles("teacher"),
+  updateManualMarks
+);
 
 // ===============================
 // 🤖 AI QUIZ ROUTES (TEACHER)

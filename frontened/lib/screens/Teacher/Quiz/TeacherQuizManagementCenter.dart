@@ -1,13 +1,14 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+// 🔥 FIX: Small 'p' ko Capital 'P' kar diya gaya hai (Aapke original structure ke mutabiq)
 import 'package:frontened/Provider/course_provider.dart';
 import 'package:frontened/Provider/quiz_provider.dart';
 
 import 'package:frontened/screens/Teacher/Quiz/TeacherQuizPreviewScreen.dart';
 import 'package:frontened/screens/Teacher/Quiz/TeacherQuizEvaluationScreen.dart';
 import 'package:frontened/screens/Teacher/Quiz/TeacherScannerOverlay.dart';
-// 🔥 LAZMI IMPORT YAHAN ADD KIYA HAI 🔥
 import 'package:frontened/screens/Teacher/Quiz/TeacherEditQuizScreen.dart';
 
 class TeacherQuizManagementCenter extends StatefulWidget {
@@ -111,7 +112,6 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
     final enrolledStudents = courseProvider.courseStudents;
     final bool isMcqQuiz = widget.quizType.toLowerCase() == "mcq";
 
-    // 🔥 CACHE LEAK FIX: Check karein ke jo data screen par hai wo isi current QuizId ka hai ya nahi!
     final String? currentFetchedQuizId = quizProvider.quizResults?["quiz"]?["id"]?.toString();
     final bool isDataMatching = currentFetchedQuizId == widget.quizId;
 
@@ -123,7 +123,6 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
         title: Text(widget.quizTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          // 1. View Key Button
           Padding(
             padding: const EdgeInsets.only(right: 4.0),
             child: TextButton.icon(
@@ -140,28 +139,19 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
               style: TextButton.styleFrom(backgroundColor: Colors.white12, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
             ),
           ),
-
-          // 2. Edit & Delete Menu (Three Dots)
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, color: Colors.white),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             onSelected: (value) async {
               if (value == 'edit') {
-                // 🔥 EDIT OPTION ADDED SAFELY 🔥
                 try {
                   final fullQuiz = context.read<QuizProvider>().quizzes.firstWhere((q) => q.id == widget.quizId);
-                  Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => TeacherEditQuizScreen(quiz: fullQuiz, courseId: widget.courseId))
-                  );
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => TeacherEditQuizScreen(quiz: fullQuiz, courseId: widget.courseId)));
                 } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Quiz data is loading, please wait..."), backgroundColor: Colors.orange)
-                  );
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Quiz data is loading, please wait..."), backgroundColor: Colors.orange));
                 }
               }
               else if (value == 'delete') {
-                // Delete Confirmation Dialog
                 final bool confirm = await showDialog(
                   context: context,
                   builder: (ctx) => AlertDialog(
@@ -170,21 +160,16 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
                     content: const Text("Are you sure you want to permanently delete this quiz? All student attempts will also be removed."),
                     actions: [
                       TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text("Delete", style: TextStyle(color: Colors.white)),
-                      ),
+                      ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red), onPressed: () => Navigator.pop(ctx, true), child: const Text("Delete", style: TextStyle(color: Colors.white))),
                     ],
                   ),
                 ) ?? false;
 
-                // Agar Teacher ne Delete confirm kiya:
                 if (confirm && mounted) {
                   final success = await context.read<QuizProvider>().deleteQuiz(quizId: widget.quizId, courseId: widget.courseId);
                   if (success && mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Quiz Deleted Successfully!"), backgroundColor: Colors.green));
-                    Navigator.pop(context); // Wapas course screen par bhej do
+                    Navigator.pop(context);
                   } else if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("❌ Failed to delete quiz."), backgroundColor: Colors.red));
                   }
@@ -234,11 +219,7 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
       child: GestureDetector(
         onTap: () => setState(() => _activeView = value),
         child: Container(
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF4F46E5) : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: isSelected ? const [BoxShadow(color: Colors.black12, blurRadius: 4)] : null,
-          ),
+          decoration: BoxDecoration(color: isSelected ? const Color(0xFF4F46E5) : Colors.transparent, borderRadius: BorderRadius.circular(10), boxShadow: isSelected ? const [BoxShadow(color: Colors.black12, blurRadius: 4)] : null,),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -263,6 +244,8 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
         final marks = (r["score"] ?? 0).toInt();
         final evaluatedByAI = r["evaluatedByAI"] ?? false;
 
+        final String attemptId = r["attemptId"] ?? "";
+        final List<String> scannedPaperUrls = List<String>.from(r["scannedPaperUrls"] ?? []);
         final List detailedAnswers = r["detailedAnswers"] ?? [];
         final String aiFeedback = r["aiFeedback"] ?? "Evaluation successfully loaded.";
 
@@ -272,8 +255,15 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
               context,
               MaterialPageRoute(
                 builder: (_) => TeacherQuizEvaluationScreen(
-                  studentName: name, quizType: widget.quizType, score: marks, totalMarks: widget.totalMarks,
-                  detailedAnswers: detailedAnswers, aiFeedback: aiFeedback,
+                  attemptId: attemptId,
+                  quizId: widget.quizId,
+                  scannedPaperUrls: scannedPaperUrls,
+                  studentName: name,
+                  quizType: widget.quizType,
+                  score: marks,
+                  totalMarks: widget.totalMarks,
+                  detailedAnswers: detailedAnswers,
+                  aiFeedback: aiFeedback,
                 ),
               ),
             );
@@ -285,7 +275,8 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
+              // Changed withOpacity to withValues to resolve the yellow warning for a perfectly clean code
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
             ),
             child: Row(
               children: [
@@ -303,7 +294,8 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                  // Changed withOpacity to withValues here as well
+                  decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
                   child: Text("$marks / ${widget.totalMarks}", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
                 ),
               ],
@@ -331,7 +323,8 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.grey.shade200),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
+            // Changed withOpacity to withValues
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
           ),
           child: Row(
             children: [

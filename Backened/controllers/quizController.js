@@ -5,7 +5,6 @@ const path = require("path");
 const { callAI } = require("../services/aiService");
 const { generateQuizPDF } = require("../utils/quizPdfGenerator");
 const fs = require("fs");
-const pdfParse = require("pdf-parse");
 const sharp = require("sharp");
 
 // ================================
@@ -14,34 +13,22 @@ const sharp = require("sharp");
 exports.createQuiz = async (req, res) => {
   try {
     const { title, type, questions, shortQuestions, longQuestions } = req.body;
-
-    // 🔥 FIX 2: Flutter "course" bhej raha hai aur backend "courseId" maangta hai. Dono handle kar liye!
     const courseId = req.body.courseId || req.body.course;
 
-    if (!courseId || !title || !type) {
-      return res.status(400).json({ message: "Missing required fields" });
-    }
+    if (!courseId || !title || !type) return res.status(400).json({ message: "Missing required fields" });
 
-    const course = await Course.findOne({
-      _id: courseId,
-      teacher: req.user._id,
-    });
-
-    if (!course) {
-      return res.status(404).json({ message: "Course not found" });
-    }
+    const course = await Course.findOne({ _id: courseId, teacher: req.user._id });
+    if (!course) return res.status(404).json({ message: "Course not found" });
 
     if (type === "mcq") {
-      const totalMarks = questions.reduce((sum, q) => sum + (q.marks || 1), 0);
+      const totalMarks = (questions || []).reduce((sum, q) => sum + (q.marks || 1), 0);
       const quiz = await Quiz.create({ course: courseId, teacher: req.user._id, title, type: "mcq", questions, totalMarks });
       return res.status(201).json({ message: "MCQ Quiz created successfully", quiz });
     }
 
     if (type === "question") {
-      const shorts = shortQuestions || [];
-      const longs = longQuestions || [];
-      const totalMarks = [...shorts, ...longs].reduce((sum, q) => sum + (q.marks || 0), 0);
-      const quiz = await Quiz.create({ course: courseId, teacher: req.user._id, title, type: "question", shortQuestions: shorts, longQuestions: longs, totalMarks });
+      const totalMarks = [...(shortQuestions || []), ...(longQuestions || [])].reduce((sum, q) => sum + (q.marks || 0), 0);
+      const quiz = await Quiz.create({ course: courseId, teacher: req.user._id, title, type: "question", shortQuestions: shortQuestions || [], longQuestions: longQuestions || [], totalMarks });
       return res.status(201).json({ message: "Question Quiz created successfully", quiz });
     }
 
@@ -52,13 +39,10 @@ exports.createQuiz = async (req, res) => {
     }
 
     return res.status(400).json({ message: "Invalid quiz type" });
-
   } catch (error) {
-    console.log("CREATE QUIZ ERROR:", error);
     return res.status(500).json({ message: "Failed to create quiz", error: error.message });
   }
 };
-
 
 // ================================
 // GENERATE QUESTION QUIZ PDF
@@ -67,20 +51,12 @@ exports.generateQuestionQuizPDF = async (req, res) => {
   try {
     const { courseId, title } = req.query;
     const quiz = await Quiz.findById(req.params.id).populate("course", "title");
-
     if (!quiz) return res.status(404).json({ message: "Quiz not found" });
-    if (!quiz.type || quiz.type.toLowerCase() !== "question") return res.status(400).json({ message: "Only question type quizzes can generate PDF" });
 
-    const pdfData = {
-      title: title || quiz.title,
-      shortQuestions: quiz.shortQuestions || [],
-      longQuestions: quiz.longQuestions || [],
-      totalMarks: quiz.totalMarks || 0,
-      grandTotalMarks: quiz.totalMarks || 0,
-    };
-
+    const pdfData = { title: title || quiz.title, shortQuestions: quiz.shortQuestions || [], longQuestions: quiz.longQuestions || [], totalMarks: quiz.totalMarks || 0, grandTotalMarks: quiz.totalMarks || 0 };
     const fileName = `question-quiz-${Date.now()}.pdf`;
     const filePath = path.join(__dirname, `../uploads/${fileName}`);
+
     await generateQuizPDF(pdfData, filePath);
     const pdfUrl = `${req.protocol}://${req.get("host")}/uploads/${fileName}`;
 
@@ -90,23 +66,19 @@ exports.generateQuestionQuizPDF = async (req, res) => {
   }
 };
 
-
 // ================================
 // GET ALL QUIZZES
 // ================================
 exports.getAllQuizzes = async (req, res) => {
   try {
     let quizzes = [];
-
     if (req.user.role === "teacher") {
       const data = await Quiz.find({ teacher: req.user._id }).populate("course", "title");
-      quizzes = data.map(q => ({ ...q.toObject(), isCompleted: false, score: null, total: q.questions.length, answers: [] }));
+      quizzes = data.map(q => ({ ...q.toObject(), isCompleted: false, score: null, total: (q.questions || []).length, answers: [] }));
     }
-
     if (req.user.role === "student") {
       const courses = await Course.find({ "students.user": req.user._id }).select("_id");
       const courseIds = courses.map(c => c._id);
-
       if (courseIds.length === 0) return res.status(200).json({ quizzes: [] });
 
       const quizzesData = await Quiz.find({ course: { $in: courseIds } }).populate("course", "title").populate("teacher", "name");
@@ -125,20 +97,16 @@ exports.getAllQuizzes = async (req, res) => {
           isAIScanned: q.isAIScanned || false,
           evaluatedByAI: attempt?.evaluatedByAI || false,
           title: q.title,
-          total: q.type === "mcq" ? q.questions.length : (q.shortQuestions?.length || 0) + (q.longQuestions?.length || 0),
+          total: q.type === "mcq" ? (q.questions || []).length : ((q.shortQuestions?.length || 0) + (q.longQuestions?.length || 0)),
           answers: attempt ? attempt.answers : [],
         };
       });
     }
-
-    // 🔥 FIX 3: Flutter expects { quizzes: [...] }, so we wrap it in an object!
     return res.status(200).json({ quizzes });
-
   } catch (error) {
     return res.status(500).json({ message: "Failed to fetch quizzes", error: error.message });
   }
 };
-
 
 // ================================
 // GET QUIZZES BY COURSE
@@ -146,16 +114,11 @@ exports.getAllQuizzes = async (req, res) => {
 exports.getQuizzesByCourse = async (req, res) => {
   try {
     let quizzes;
-
     if (req.user.role === "teacher") {
       quizzes = await Quiz.find({ course: req.params.courseId, teacher: req.user._id });
-    }
-
-    if (req.user.role === "student") {
+    } else {
       quizzes = await Quiz.find({ course: req.params.courseId }).populate("teacher", "name email");
     }
-
-    // 🔥 FIX 3: Flutter expects { quizzes: [...] } here too!
     res.json({ quizzes });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -163,7 +126,7 @@ exports.getQuizzesByCourse = async (req, res) => {
 };
 
 // =======================================================
-// GET QUIZ RESULTS (TEACHER VIEW - WITH MCQS BREAKDOWN FIX)
+// GET QUIZ RESULTS (TEACHER VIEW - WITH PAPER IMAGES)
 // =======================================================
 exports.getQuizResults = async (req, res) => {
   try {
@@ -178,26 +141,19 @@ exports.getQuizResults = async (req, res) => {
       const evaluatedByAI = a.evaluatedByAI || false;
       let detailedAnswers = [];
 
-      // MCQ Quiz Breakdown
+      const scannedPaperUrls = (a.scannedPaper || []).map(fileName => {
+        return `${req.protocol}://${req.get("host")}/uploads/${fileName}`;
+      });
+
       if (quiz.type === "mcq") {
-        detailedAnswers = quiz.questions.map((q, idx) => {
+        detailedAnswers = (quiz.questions || []).map((q, idx) => {
           const studentAnsObj = a.answers && a.answers[idx] ? a.answers[idx] : {};
           const studentAnswer = studentAnsObj.selectedAnswer || "Not Answered";
           const isCorrect = studentAnswer === q.correctAnswer;
-
-          return {
-            question_text: q.question, // Updated to match Flutter
-            student_answer: studentAnswer, // Updated to match Flutter
-            correct_answer: q.correctAnswer, // Updated to match Flutter
-            isCorrect: isCorrect,
-            obtained_marks: isCorrect ? (q.marks || 1) : 0 // Updated to match Flutter
-          };
+          return { question_text: q.question, student_answer: studentAnswer, correct_answer: q.correctAnswer, isCorrect: isCorrect, obtained_marks: isCorrect ? (q.marks || 1) : 0 };
         });
-      }
-      // AI Vision Scan Descriptive Quiz Breakdown
-      else if (evaluatedByAI) {
+      } else if (evaluatedByAI) {
         detailedAnswers = (a.answers || []).map((ans) => ({
-          // Fallbacks for both old format and new strict AI format
           question_text: ans.question_text || ans.question || "Question",
           student_answer: ans.student_answer || ans.studentAnswer || ans.selectedAnswer || "",
           correct_answer: ans.correct_answer || ans.correctAnswer || "See Rubric/Exam Key",
@@ -207,14 +163,16 @@ exports.getQuizResults = async (req, res) => {
       }
 
       return {
+        attemptId: a._id,
         studentId: a.student._id,
         name: a.student.name,
         email: a.student.email,
         score: a.score ?? 0,
         totalMarks: a.total ?? quiz.totalMarks,
         evaluatedByAI,
+        scannedPaperUrls,
         percentage: a.total > 0 ? ((a.score / a.total) * 100).toFixed(2) : "0.00",
-        detailedAnswers // Sending correct keys to Flutter
+        detailedAnswers
       };
     });
 
@@ -226,6 +184,7 @@ exports.getQuizResults = async (req, res) => {
     return res.status(500).json({ message: "Failed to fetch quiz results", error: error.message });
   }
 };
+
 // ================================
 // ATTEMPT QUIZ
 // ================================
@@ -240,92 +199,65 @@ exports.attemptQuiz = async (req, res) => {
     const answers = req.body.answers || [];
     let score = 0;
 
-    const review = quiz.questions.map((q, index) => {
+    const review = (quiz.questions || []).map((q, index) => {
       const raw = answers[index];
       const selected = raw && raw.selectedAnswer && raw.selectedAnswer.trim() !== "" ? raw.selectedAnswer : null;
-      const isSkipped = !selected;
       const isCorrect = selected === q.correctAnswer;
       if (isCorrect) score++;
-      return { question: q.question, selectedAnswer: selected, correctAnswer: q.correctAnswer, isCorrect: isSkipped ? false : isCorrect, skipped: isSkipped };
+      return { question: q.question, selectedAnswer: selected, correctAnswer: q.correctAnswer, isCorrect: !selected ? false : isCorrect, skipped: !selected };
     });
 
     const attempt = await Attempt.create({ student: req.user._id, quiz: quiz._id, answers: review.map(r => ({ selectedAnswer: r.selectedAnswer || "" })), score });
-    return res.status(200).json({ message: "Quiz attempted successfully", score, total: quiz.questions.length, review });
+    return res.status(200).json({ message: "Quiz attempted successfully", score, total: (quiz.questions || []).length, review });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
 };
 
 // ================================
-// DELETE QUIZ
+// DELETE & UPDATE QUIZ
 // ================================
 exports.deleteQuiz = async (req, res) => {
   try {
     const quiz = await Quiz.findOne({ _id: req.params.id, teacher: req.user._id });
     if (!quiz) return res.status(404).json({ message: "Quiz not found" });
-
     await quiz.deleteOne();
     res.json({ message: "Quiz deleted successfully" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
-// ================================
-// UPDATE QUIZ (ALL TYPES SUPPORTED)
-// ================================
+
 exports.updateQuiz = async (req, res) => {
   try {
-    const quiz = await Quiz.findOne({
-      _id: req.params.id,
-      teacher: req.user._id,
-    });
+    const quiz = await Quiz.findOne({ _id: req.params.id, teacher: req.user._id });
+    if (!quiz) return res.status(404).json({ message: "Quiz not found" });
 
-    if (!quiz) {
-      return res.status(404).json({ message: "Quiz not found" });
-    }
-
-    // 1. Update Title if provided
     if (req.body.title) quiz.title = req.body.title;
-
-    // 2. Update Questions based on what is provided
     if (req.body.questions) quiz.questions = req.body.questions;
     if (req.body.shortQuestions) quiz.shortQuestions = req.body.shortQuestions;
     if (req.body.longQuestions) quiz.longQuestions = req.body.longQuestions;
 
-    // 3. Auto-Recalculate Total Marks
     let total = 0;
-    if (quiz.type === "mcq") {
-      total = quiz.questions.reduce((sum, q) => sum + (q.marks || 1), 0);
-    } else {
-      total += (quiz.shortQuestions || []).reduce((sum, q) => sum + (q.marks || 0), 0);
-      total += (quiz.longQuestions || []).reduce((sum, q) => sum + (q.marks || 0), 0);
-    }
+    if (quiz.type === "mcq") total = (quiz.questions || []).reduce((sum, q) => sum + (q.marks || 1), 0);
+    else total += (quiz.shortQuestions || []).reduce((sum, q) => sum + (q.marks || 0), 0) + (quiz.longQuestions || []).reduce((sum, q) => sum + (q.marks || 0), 0);
+
     quiz.totalMarks = total;
-
     await quiz.save();
-
-    res.json({
-      message: "Quiz updated successfully",
-      quiz,
-    });
+    res.json({ message: "Quiz updated successfully", quiz });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
+
 // =========================================================
 // 🔥 VISION-BASED AI QUIZ SCANNING
 // =========================================================
 exports.scanAIQuizMarks = async (req, res) => {
   try {
-    const { courseId, studentId, title, quizId } = req.body;
-
-    if (!courseId || !studentId || !quizId) {
-      return res.status(400).json({ message: "courseId, studentId, and quizId are required" });
-    }
-
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ message: "Answer sheet images required" });
-    }
+    const { courseId, studentId, quizId } = req.body;
+    if (!courseId || !studentId || !quizId) return res.status(400).json({ message: "courseId, studentId, and quizId are required" });
+    if (!req.files || req.files.length === 0) return res.status(400).json({ message: "Answer sheet images required" });
 
     const course = await Course.findById(courseId);
     if (!course) return res.status(404).json({ message: "Course not found" });
@@ -334,135 +266,108 @@ exports.scanAIQuizMarks = async (req, res) => {
     if (!originalQuiz) return res.status(404).json({ message: "Original Quiz not found" });
 
     const images = [];
-    for (const file of req.files) {
-      const optimizedPath = path.join(__dirname, `../uploads/optimized-${file.filename}.jpg`);
-      await sharp(file.path)
-        .rotate()
-        .resize({ width: 1800, withoutEnlargement: true })
-        .jpeg({ quality: 60 })
-        .toFile(optimizedPath);
+    const savedFileNames = [];
 
+    for (const file of req.files) {
+      const fileName = `optimized-${file.filename}.jpg`;
+      const optimizedPath = path.join(__dirname, `../uploads/${fileName}`);
+
+      await sharp(file.path).rotate().resize({ width: 1200, withoutEnlargement: true }).jpeg({ quality: 70 }).toFile(optimizedPath);
+
+      savedFileNames.push(fileName);
       const imageBuffer = fs.readFileSync(optimizedPath);
       images.push(imageBuffer.toString("base64"));
     }
 
-    const visionPrompt = `You are an expert university paper checker. Evaluate marks fairly out of total marks ${originalQuiz.totalMarks}.`;
+    const visionPrompt = `You are a strict University Examiner. Analyze the handwritten text in the image. Evaluate fairly out of total marks: ${originalQuiz.totalMarks}.
+Return STRICT JSON ONLY:
+{
+  "evaluation": { "total_max_marks": ${originalQuiz.totalMarks}, "total_obtained_marks": 5, "overall_feedback": "Short summary" },
+  "detailedAnswers": [ { "question_text": "Q1", "student_answer": "Answer from image", "correct_answer": "Expected answer", "obtained_marks": 5, "isCorrect": true } ]
+}`;
 
     const aiData = await callAI({ prompt: visionPrompt, images });
 
     if (!aiData || (!aiData.evaluation && !aiData.detailedAnswers)) {
-      return res.status(500).json({ message: "Invalid AI response" });
+      return res.status(500).json({ message: "Invalid AI response from Vision Model" });
     }
 
-    // Update variables based on strict JSON format from aiService
     let score = Number(aiData.evaluation?.total_obtained_marks || aiData.evaluation?.score) || 0;
     let totalMarks = Number(aiData.evaluation?.total_max_marks || aiData.evaluation?.totalMarks) || originalQuiz.totalMarks;
     score = Math.max(0, Math.min(score, totalMarks));
-    const percentage = totalMarks > 0 ? ((score / totalMarks) * 100).toFixed(2) : 0;
-
-    const answersArray = aiData.detailedAnswers || aiData.questions || [];
 
     originalQuiz.isAIScanned = true;
     await originalQuiz.save();
 
     let attempt = await Attempt.findOne({ student: studentId, quiz: quizId });
-
     if (attempt) {
-      attempt.answers = answersArray;
+      attempt.answers = aiData.detailedAnswers || [];
       attempt.score = score;
       attempt.total = totalMarks;
       attempt.evaluatedByAI = true;
-      attempt.scannedPaper = req.files.map((f) => f.filename).join(",");
+      attempt.scannedPaper = savedFileNames;
       await attempt.save();
     } else {
       attempt = await Attempt.create({
-        student: studentId,
-        quiz: quizId,
-        answers: answersArray,
-        score,
-        total: totalMarks,
-        evaluatedByAI: true,
-        scannedPaper: req.files.map((f) => f.filename).join(","),
+        student: studentId, quiz: quizId, answers: aiData.detailedAnswers || [],
+        score, total: totalMarks, evaluatedByAI: true, scannedPaper: savedFileNames,
       });
     }
 
     for (const file of req.files) {
-      const optimizedPath = path.join(__dirname, `../uploads/optimized-${file.filename}.jpg`);
-      if (fs.existsSync(optimizedPath)) fs.unlinkSync(optimizedPath);
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
     }
 
-    return res.status(200).json({
-      message: "AI answer sheet scanning completed successfully",
-      quiz: originalQuiz,
-      attempt,
-      evaluation: { score, totalMarks, percentage }
-    });
-
+    return res.status(200).json({ message: "AI Scanning Complete", evaluation: { score, totalMarks } });
   } catch (error) {
-    console.log("❌ VISION SCAN ERROR:", error);
+    console.log("❌ VISION SCAN ERROR:", error.message);
     return res.status(500).json({ message: "Vision scan failed", error: error.message });
   }
 };
-// =======================================
-// RESTORED MISSING FUNCTIONS (TO PREVENT ROUTE CRASH)
-// =======================================
 
-exports.createAIMCQQuiz = async (req, res) => {
+// =========================================================
+// 🔥 MANUAL MARKS OVERRIDE (TEACHER CONTROL)
+// =========================================================
+exports.updateManualMarks = async (req, res) => {
   try {
-    return res.status(200).json({ message: "Use the new AI MCQ route" });
+    const { attemptId } = req.params;
+    const { manualScore } = req.body;
+
+    if (manualScore === undefined) return res.status(400).json({ message: "Manual score is required" });
+
+    const attempt = await Attempt.findById(attemptId);
+    if (!attempt) return res.status(404).json({ message: "Attempt not found" });
+
+    attempt.score = Number(manualScore);
+    await attempt.save();
+
+    return res.status(200).json({ message: "Marks updated manually successfully!", score: attempt.score });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ message: "Failed to update marks", error: error.message });
   }
+};
+
+// =========================================
+// RESTORED FALLBACKS FOR AI ROUTING
+// =========================================
+exports.createAIMCQQuiz = async (req, res) => {
+  return res.status(200).json({ message: "Use the new AI MCQ route" });
 };
 
 exports.createAIQuestionQuiz = async (req, res) => {
-  try {
-    return res.status(200).json({ message: "Use the new AI Question route" });
-  } catch (error) {
-    return res.status(500).json({ error: error.message });
-  }
+  return res.status(200).json({ message: "Use the new AI Question route" });
 };
 
-// =========================================
-// GENERATE AI QUESTION QUIZ PDF (ORIGINAL)
-// =========================================
 exports.generateAIQuestionQuizPDF = async (req, res) => {
   try {
     const { quizId } = req.params;
-
-    if (!quizId) {
-      return res.status(400).json({ message: "quizId is required" });
-    }
+    if (!quizId) return res.status(400).json({ message: "quizId is required" });
 
     const quiz = await Quiz.findById(quizId).populate("course", "title");
-
-    if (!quiz) {
-      return res.status(404).json({ message: "Quiz not found" });
-    }
-
-    if (req.user.role === "teacher") {
-      if (quiz.teacher.toString() !== req.user._id.toString()) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-    }
-
-    if (req.user.role === "student") {
-      const enrolled = await Course.findOne({
-        _id: quiz.course._id,
-        "students.user": req.user._id,
-      });
-
-      if (!enrolled) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-    }
+    if (!quiz) return res.status(404).json({ message: "Quiz not found" });
 
     const hasShort = quiz.shortQuestions && quiz.shortQuestions.length > 0;
     const hasLong = quiz.longQuestions && quiz.longQuestions.length > 0;
-
-    if (!hasShort && !hasLong) {
-      return res.status(400).json({ message: "No questions available in quiz" });
-    }
 
     const pdfData = {
       title: quiz.title,
@@ -477,23 +382,11 @@ exports.generateAIQuestionQuizPDF = async (req, res) => {
 
     const fileName = `ai-question-${Date.now()}.pdf`;
     const filePath = path.join(__dirname, `../uploads/${fileName}`);
-
     await generateQuizPDF(pdfData, filePath);
-
     const pdfUrl = `${req.protocol}://${req.get("host")}/uploads/${fileName}`;
 
-    return res.status(200).json({
-      message: "PDF generated successfully",
-      pdfUrl,
-      type: {
-        short: hasShort,
-        long: hasLong,
-        mode: hasShort && hasLong ? "BOTH" : hasShort ? "SHORT_ONLY" : "LONG_ONLY",
-      },
-    });
-
+    return res.status(200).json({ message: "PDF generated successfully", pdfUrl });
   } catch (error) {
-    console.log("AI PDF ERROR:", error);
     return res.status(500).json({ message: error.message });
   }
 };

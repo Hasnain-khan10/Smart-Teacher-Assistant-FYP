@@ -1,20 +1,14 @@
 const path = require("path");
 const fs = require("fs");
-const { GoogleGenAI } = require("@google/genai");
 const Quiz = require("../models/Quiz");
 const Course = require("../models/Course");
 const { generateQuizPDF } = require("../utils/quizPdfGenerator");
+const { callAI } = require("../services/aiService"); // 🔥 Switched to Groq Service
 const pdfParse = require("pdf-parse");
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-function fileToGenerativePart(filePath, mimeType) {
-  return { inlineData: { data: Buffer.from(fs.readFileSync(filePath)).toString("base64"), mimeType } };
-}
 
 exports.createAIMCQQuiz = async (req, res) => {
   try {
-    let { courseId, topic, prompt, courseTitle, difficulty = "medium", questionCount, marksPerQuestion } = req.body;
+    let { courseId, topic, prompt, courseTitle, difficulty = "hard", questionCount, marksPerQuestion } = req.body;
 
     const finalCourseId = (courseId && courseId !== "UNKNOWN") ? courseId : null;
     let finalTopic = topic || prompt || courseTitle || "General Evaluation";
@@ -35,56 +29,49 @@ exports.createAIMCQQuiz = async (req, res) => {
     const perMark = Number(marksPerQuestion) || 1;
 
     let extractedText = "";
-    let attachedFilePart = null;
 
-    if (req.file) {
-      if (req.file.mimetype === "application/pdf") {
-        try {
-            const dataBuffer = fs.readFileSync(req.file.path);
-            const pdfData = await pdfParse(dataBuffer);
-            extractedText = pdfData.text ? pdfData.text.substring(0, 7000) : "";
-        } catch(e) {
-            console.log("PDF parse warning:", e.message);
-        }
-      } else if (req.file.mimetype.startsWith("image/")) {
-        attachedFilePart = fileToGenerativePart(req.file.path, req.file.mimetype);
+    // 🔥 LIMIT INCREASED TO 25,000 CHARACTERS FOR GROQ
+    if (req.file && req.file.mimetype === "application/pdf") {
+      try {
+          const dataBuffer = fs.readFileSync(req.file.path);
+          const pdfData = await pdfParse(dataBuffer);
+          extractedText = pdfData.text ? pdfData.text.substring(0, 25000) : "";
+      } catch(e) {
+          console.log("PDF parse warning:", e.message);
       }
     }
 
-    const systemInstruction = `You are a Lead Examination Board Setter.
-STRICT RULE 1: Output MUST be strictly valid raw JSON matching the schema precisely.
-STRICT RULE 2: No markdown formatting, no code block backticks.
-STRICT RULE 3: Explanations must be a single brief sentence maximum.`;
+    // 🔥 HIGH-LEVEL UNIVERSITY PROMPT FOR MCQS
+    const groqPrompt = `You are a Lead Examination Board Setter for a University.
+Create a highly analytical Multiple Choice Question (MCQ) exam.
+Topic: ${finalTopic}
+Difficulty: ${difficulty}
+Total MCQs: ${count}
+${extractedText ? `Reference Context Data:\n${extractedText}\n\n` : ''}
 
-    const userPromptText = `Subject Focus Tier: ${finalTopic}\nDifficulty Matrix: ${difficulty}\nTotal MCQs Required: ${count}\n${extractedText ? `Reference Context Data:\n${extractedText}\n\n` : ''}\nReturn a single clean parseable JSON object matching exactly this layout:\n{ "title": "Analytical MCQ Assessment", "description": "High-level cognitive evaluation paper.", "questions": [ { "question": "Scenario or analytical question?", "options": { "A": "Option A", "B": "Option B", "C": "Option C", "D": "Option D" }, "correctAnswer": "A", "explanation": "Brief rationale." } ] }`;
+STRICT RULES:
+1. Options must contain strong plausible distractors (tricky options).
+2. The explanation must clearly state WHY the correct option is right and others are wrong.
+3. Return ONLY clean JSON.
 
-    let contentsPayload = [];
-    if (attachedFilePart) contentsPayload.push(attachedFilePart);
-    contentsPayload.push(userPromptText);
+JSON Format Layout:
+{
+  "title": "Analytical MCQ Assessment: ${finalTopic}",
+  "description": "High-level cognitive evaluation paper.",
+  "questions": [
+    {
+      "question": "Deep analytical question text?",
+      "options": { "A": "Option A", "B": "Option B", "C": "Option C", "D": "Option D" },
+      "correctAnswer": "A",
+      "explanation": "Detailed rationale explaining the correct concept."
+    }
+  ]
+}`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: contentsPayload,
-      config: {
-        systemInstruction: systemInstruction,
-        responseMimeType: "application/json",
-        temperature: 0.2,
-        tools: []
-      }
-    });
-
-    let aiData;
-    try {
-      let cleanResponse = response.text || "";
-      // 🔥 FIX: Backticks use karne ki bajaye hum direct { } brackets dhoondh rahe hain (100% Safe)
-      const startIndex = cleanResponse.indexOf("{");
-      const endIndex = cleanResponse.lastIndexOf("}");
-      if (startIndex !== -1 && endIndex !== -1) {
-         cleanResponse = cleanResponse.substring(startIndex, endIndex + 1);
-      }
-      aiData = JSON.parse(cleanResponse);
-    } catch (err) {
-      return res.status(500).json({ success: false, message: "AI response processing crashed. Try smaller input." });
+    // 🔥 CALL GROQ AI
+const aiData = await callAI({ prompt: groqPrompt, model: "llama-3.1-70b-versatile" });
+    if (!aiData || !aiData.questions) {
+      return res.status(500).json({ success: false, message: "Invalid JSON structure from AI" });
     }
 
     const formattedQuestions = (aiData.questions || []).slice(0, count).map(q => ({
@@ -110,12 +97,12 @@ STRICT RULE 3: Explanations must be a single brief sentence maximum.`;
       course: finalCourseId,
       teacher: finalTeacherId,
       title: aiData.title || `${finalTopic} Assessment`,
-      description: aiData.description || "Premium AI Workspace Grid",
+      description: aiData.description || "University Level MCQ Exam",
       type: "mcq",
       questions: formattedQuestions,
       totalMarks: formattedQuestions.length * perMark,
       marksPerQuestion: perMark,
-      examMeta: { type: "MCQ_EXAM", generatedBy: "AI_PREMIUM" }
+      examMeta: { type: "MCQ_EXAM", generatedBy: "GROQ_AI" }
     });
 
     await dbQuiz.save();
@@ -123,14 +110,13 @@ STRICT RULE 3: Explanations must be a single brief sentence maximum.`;
 
     return res.status(200).json({
       success: true,
-      message: "MCQ generated perfectly",
+      message: "MCQ generated perfectly via Groq",
       pdfUrl: `${req.protocol}://${req.get("host")}/uploads/${fileName}`,
       quiz: dbQuiz
     });
 
   } catch (error) {
     console.error("AI Generation Error:", error.message);
-    let msg = error.message.includes("429") ? "API Quota exceeded! Please check your Google account limits." : error.message;
-    return res.status(500).json({ success: false, message: msg });
+    return res.status(500).json({ success: false, message: error.message });
   }
 };

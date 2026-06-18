@@ -49,7 +49,7 @@ class WeekPlanService {
     throw Exception(jsonDecode(response.body)["message"] ?? "Week PDF download failed");
   }
 
-  // 🔥 Format parameter added
+  // 🔥 ADDED TIMEOUT FOR HIGH DETAIL AI GENERATION (90 SECONDS)
   static Future<WeekPlanModel> generateAIPlan(String courseId, {required String courseTitle, String? prompt, required String format}) async {
     String combinedTopic = (prompt == null || prompt.isEmpty) ? courseTitle : "$courseTitle - $prompt";
 
@@ -60,16 +60,17 @@ class WeekPlanService {
         "course": courseId, "courseId": courseId,
         "teacher": "6a2b27ef72643f1a4b2e7b2f", "teacherId": "6a2b27ef72643f1a4b2e7b2f",
         "topic": combinedTopic, "level": "university", "focus": "theory + practical",
-        "style": "structured syllabus", "teacherCustomPrompt": combinedTopic, "bookText": "",
-        "format": format // 🔥 Passed to backend
+        "style": "detailed academic syllabus", "teacherCustomPrompt": combinedTopic, "bookText": "",
+        "format": format
       }),
-    );
+    ).timeout(const Duration(seconds: 90)); // Prevents Socket Exception Crash
+
     final data = jsonDecode(response.body);
     if (response.statusCode == 200 && data["success"] == true) return WeekPlanModel.fromJson(data["plan"]);
     throw Exception(data["message"] ?? "AI plan generation failed");
   }
 
-  // 🔥 Format parameter added
+  // 🔥 ADDED TIMEOUT FOR HEAVY PDF EXTRACTION
   static Future<WeekPlanModel> generateAIPlanFromBook(String courseId, {required String courseTitle, required File bookFile, required String format}) async {
     final request = http.MultipartRequest("POST", Uri.parse("${Api.baseUrl}/ai/plans"));
     request.headers.addAll(await _authOnlyHeaders());
@@ -79,14 +80,14 @@ class WeekPlanService {
     request.fields["topic"] = courseTitle;
     request.fields["level"] = "university";
     request.fields["focus"] = "theory + practical";
-    request.fields["style"] = "structured syllabus";
-    request.fields["teacherCustomPrompt"] = "Extract syllabus strictly matching: $courseTitle";
+    request.fields["style"] = "detailed academic syllabus";
+    request.fields["teacherCustomPrompt"] = "Extract highly detailed syllabus strictly matching: $courseTitle";
     request.fields["bookText"] = courseTitle;
-    request.fields["format"] = format; // 🔥 Passed to backend
+    request.fields["format"] = format;
 
     request.files.add(await http.MultipartFile.fromPath("book", bookFile.path));
 
-    final streamedResponse = await request.send();
+    final streamedResponse = await request.send().timeout(const Duration(seconds: 90));
     final response = await http.Response.fromStream(streamedResponse);
     final data = jsonDecode(response.body);
 

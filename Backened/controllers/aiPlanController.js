@@ -1,16 +1,10 @@
 const path = require("path");
 const fs = require("fs");
-const { GoogleGenAI } = require("@google/genai");
 const WeekPlan = require("../models/WeekPlan");
 const Course = require("../models/Course");
 const { generatePlanDocument } = require("../utils/planExportGenerator");
+const { callAI } = require("../services/aiService"); // 🔥 Groq Service Import
 const pdfParse = require("pdf-parse");
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-function fileToGenerativePart(filePath, mimeType) {
-  return { inlineData: { data: Buffer.from(fs.readFileSync(filePath)).toString("base64"), mimeType } };
-}
 
 exports.createAIPlan = async (req, res) => {
   try {
@@ -23,7 +17,6 @@ exports.createAIPlan = async (req, res) => {
         finalTopic = req.file ? "Plan based on attached file" : "General Syllabus";
     }
 
-    // 🔥 FIX: Safe Teacher ID Extraction (Saves plan directly to your account)
     let finalTeacherId = "6a2b27ef72643f1a4b2e7b2f";
     if (req.user && req.user._id) {
        finalTeacherId = req.user._id;
@@ -33,84 +26,57 @@ exports.createAIPlan = async (req, res) => {
     }
 
     let extractedText = "";
-    let attachedFilePart = null;
 
-    // 🔥 PREVENT 429/503: Keep Text Size Small
-    if (req.file) {
-      if (req.file.mimetype === "application/pdf") {
-        try {
-            const dataBuffer = fs.readFileSync(req.file.path);
-            const pdfData = await pdfParse(dataBuffer);
-            extractedText = pdfData.text ? pdfData.text.substring(0, 6000) : ""; // Safe Token limit
-        } catch(e) {
-            console.log("PDF parse warning:", e.message);
-        }
-      } else if (req.file.mimetype.startsWith("image/")) {
-        attachedFilePart = fileToGenerativePart(req.file.path, req.file.mimetype);
+    // 🔥 HIGH LIMIT PDF EXTRACTION (Up to 25,000 characters for Groq)
+    if (req.file && req.file.mimetype === "application/pdf") {
+      try {
+          const dataBuffer = fs.readFileSync(req.file.path);
+          const pdfData = await pdfParse(dataBuffer);
+          extractedText = pdfData.text ? pdfData.text.substring(0, 25000) : "";
+      } catch(e) {
+          console.log("PDF parse warning:", e.message);
       }
     }
 
-    const systemInstruction = `You are a Lead Academic Professor.
-STRICT RULE 1: Generate EXACTLY 18 weeks.
-STRICT RULE 2: Output MUST be strictly valid raw JSON. No markdown backticks.
-STRICT RULE 3: Keep definitions, explanations, and analogies extremely brief (1-2 sentences maximum) to avoid token limit crashes.`;
-
-    const promptInstructions = `Design an 18-Week highly concise curriculum.
+    // 🔥 HIGH DETAIL SYSTEM INSTRUCTION
+    const groqPrompt = `You are a Lead Academic Professor at a top-tier University.
+Design a highly detailed, comprehensive 18-Week curriculum.
 Course/Topic: ${finalTopic}
 Special Instructions: ${teacherCustomPrompt}
 ${extractedText ? `Reference Context:\n${extractedText}\n\n` : ''}
+
+STRICT RULES:
+1. Generate EXACTLY 18 weeks.
+2. Output MUST be strictly valid raw JSON.
+3. Provide IN-DEPTH and DETAILED academic definitions and explanations (no short sentences).
+
 Return a single JSON object structured EXACTLY like this:
 {
-  "title": "18-Week Plan: ${finalTopic}",
-  "description": "Concise weekly blueprint.",
+  "title": "Comprehensive 18-Week Plan: ${finalTopic}",
+  "description": "In-depth university-level curriculum.",
   "weeks": [
     {
       "weekNumber": 1,
       "title": "Topic Name",
-      "definition": "Brief 1-sentence definition.",
-      "detailedExplanation": "Brief 2-sentence explanation.",
-      "subTopics": ["Subtopic 1", "Subtopic 2"],
-      "typesOrClassifications": ["Type A", "Type B"],
-      "codeOrQuerySnippet": "1 line code or empty",
-      "realWorldAnalogy": "Brief 1-sentence analogy."
+      "definition": "Detailed 3-4 sentence comprehensive definition.",
+      "detailedExplanation": "Deep academic explanation covering core concepts.",
+      "subTopics": ["Detailed Subtopic 1", "Detailed Subtopic 2", "Detailed Subtopic 3"],
+      "typesOrClassifications": ["Category A", "Category B", "Category C"],
+      "codeOrQuerySnippet": "Provide a meaningful code snippet, formula, or core principle.",
+      "realWorldAnalogy": "A strong, detailed real-world industry analogy."
     }
   ]
 }`;
 
-    let contentsPayload = [];
-    if (attachedFilePart) contentsPayload.push(attachedFilePart);
-    contentsPayload.push(promptInstructions);
+    console.log("📅 Generating High-Detail Course Planner via Groq...");
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: contentsPayload,
-      config: {
-        systemInstruction: systemInstruction,
-        responseMimeType: "application/json",
-        temperature: 0.2,
-        tools: [] // 🔥 DISABLE Google Search to prevent API quota exhaust
-      }
-    });
-
-    let aiData;
-    try {
-      let cleanResponse = response.text || "";
-      // 🔥 SMART BRACKET EXTRACTION: Copy-paste syntax errors se bachne ka 100% safe tarika
-      const startIndex = cleanResponse.indexOf("{");
-      const endIndex = cleanResponse.lastIndexOf("}");
-      if (startIndex !== -1 && endIndex !== -1) {
-         cleanResponse = cleanResponse.substring(startIndex, endIndex + 1);
-      }
-      aiData = JSON.parse(cleanResponse);
-    } catch (parseErr) {
-      return res.status(500).json({ success: false, message: "AI response failed to parse. Try making the prompt smaller." });
-    }
-
+    // 🔥 CALL GROQ AI
+const aiData = await callAI({ prompt: groqPrompt, model: "llama-3.1-70b-versatile" });
     if (!aiData.weeks || !Array.isArray(aiData.weeks)) {
       return res.status(500).json({ success: false, message: "AI generated an invalid payload." });
     }
 
-    // 🔥 FORCE EXACT 18 WEEKS (Protects from incomplete plans)
+    // 🔥 FORCE EXACT 18 WEEKS & HANDLE MISSING DATA
     let formattedWeeks = aiData.weeks.slice(0, 18).map((w, i) => ({
       weekNumber: i + 1,
       title: w.title || `Week ${i + 1}`,
@@ -145,7 +111,7 @@ Return a single JSON object structured EXACTLY like this:
       course: finalCourseId,
       teacher: finalTeacherId,
       title: aiData.title || "18-Week Curriculum",
-      description: aiData.description || "AI Generated Short Plan",
+      description: aiData.description || "AI Generated Detailed Plan",
       prompt: teacherCustomPrompt,
       outputFormat: format || "PDF",
       generationSource: req.file ? "book" : "prompt",
@@ -158,14 +124,13 @@ Return a single JSON object structured EXACTLY like this:
 
     return res.status(200).json({
       success: true,
-      message: "18-week plan generated perfectly.",
+      message: "18-week comprehensive plan generated perfectly.",
       documentUrl,
       plan: savedPlan
     });
 
   } catch (error) {
     console.error("AI Plan Error:", error.message);
-    let msg = error.message.includes("429") ? "API Quota exceeded! Please check your limits." : error.message;
-    return res.status(500).json({ success: false, message: msg });
+    return res.status(500).json({ success: false, message: error.message });
   }
 };

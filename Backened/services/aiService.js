@@ -2,117 +2,71 @@ const axios = require("axios");
 require("dotenv").config();
 
 // ======================================================
-// 🔥 UNIVERSAL AI SERVICE (Strict JSON Format Enforced)
+// 🔥 GROQ CLOUD AI SERVICE (WITH VISION SCANNING SUPPORT)
 // ======================================================
-
 exports.callAI = async ({
   prompt,
   images = [],
-  model = "gemini-3.5-flash", // Aapka set kiya hua model
   temperature = 0.3,
 }) => {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error("GEMINI_API_KEY is missing in your .env file!");
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) throw new Error("GROQ_API_KEY is missing in your .env file!");
 
-    const parts = [];
-
-    // 1. SYSTEM + USER PROMPT (🔥 STRICT JSON FORMAT ADDED HERE 🔥)
-    const fullPrompt = `
-You are an advanced AI university evaluator.
-
-IMPORTANT RULES:
-- Return ONLY valid JSON
-- No markdown, No code block, No explanations
-- You MUST return the JSON EXACTLY in this format, do not change the variable names:
-{
-  "evaluation": {
-    "total_max_marks": 5,
-    "total_obtained_marks": 4,
-    "overall_feedback": "Overall summary here"
-  },
-  "detailedAnswers": [
-    {
-      "question_text": "Question text here",
-      "student_answer": "Student's exact answer",
-      "correct_answer": "The ideal correct answer",
-      "obtained_marks": 4,
-      "isCorrect": true,
-      "feedback": "Specific feedback here"
+    // Default Settings for Text
+    let activeModel = "llama-3.3-70b-versatile";
+    let maxTokens = 3500;
+    if (prompt.includes("18-Week") || prompt.includes("weeks")) {
+      maxTokens = 7500;
     }
-  ]
-}
 
-If images are provided:
-- analyze handwriting carefully
-- understand messy handwriting
-- detect questions and answers
-- evaluate like a teacher
-- give partial marks fairly
-- do not hallucinate missing answers
+    let messageContent;
 
-Here is the task:
-${prompt}
-    `;
-    parts.push({ text: fullPrompt });
+    // 🔥 SMART VISION SWITCH: Agar image aayi to Vision Model trigger hoga
+    if (images && images.length > 0) {
+      activeModel = "llama-3.2-11b-vision-preview"; // Groq Vision Model
+      maxTokens = 2000; // Standard size for evaluations
 
-    // 2. ADD IMAGES
-    if (images.length > 0) {
-      for (const image of images) {
-        let base64Data = image;
-        let mimeType = "image/jpeg";
+      messageContent = [{ type: "text", text: prompt }];
 
-        if (image.startsWith("data:image")) {
-          const split = image.split(";base64,");
-          mimeType = split[0].replace("data:", "");
-          base64Data = split[1];
-        }
-
-        parts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
+      for (const img of images) {
+        const base64Data = img.startsWith("data:image") ? img : `data:image/jpeg;base64,${img}`;
+        messageContent.push({
+          type: "image_url",
+          image_url: { url: base64Data }
+        });
       }
+    } else {
+      // Normal Text Prompt
+      messageContent = prompt;
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-    const payload = { contents: [{ parts }], generationConfig: { temperature: temperature } };
+    const url = "https://api.groq.com/openai/v1/chat/completions";
 
-    // ==================================================
-    // 🔥 AUTO-RETRY LOGIC
-    // ==================================================
-    let response;
-    let maxRetries = 3;
+    const payload = {
+      model: activeModel,
+      messages: [{ role: "user", content: messageContent }],
+      temperature: temperature,
+      max_tokens: maxTokens,
+      response_format: { type: "json_object" }
+    };
 
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        response = await axios.post(url, payload, { headers: { "Content-Type": "application/json" } });
-        break;
-      } catch (err) {
-        const status = err.response?.status;
-        if ((status === 503 || status === 429) && i < maxRetries - 1) {
-          console.log(`⚠️ Google API busy (Status ${status}). Retrying in 2.5 seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 2500));
-        } else {
-          throw err;
-        }
+    console.log(`🚀 Sending request to Groq using Model: ${activeModel}...`);
+
+    const response = await axios.post(url, payload, {
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
       }
-    }
+    });
 
-    // ==================================================
-    // RAW AI RESPONSE & CLEANUP
-    // ==================================================
-    const content = response.data.candidates[0].content.parts[0].text;
-    console.log("🤖 AI RAW RESPONSE =>", content);
+    const content = response.data.choices[0].message.content;
+    console.log("🤖 GROQ RAW RESPONSE RECEIVED SUCCESSFULLY");
 
-    let cleaned = content.replace(/```json/g, "").replace(/```/g, "").trim();
-
-    try {
-      return JSON.parse(cleaned);
-    } catch (err) {
-      console.log("❌ INVALID JSON FROM AI =>", cleaned);
-      throw new Error("AI returned invalid JSON");
-    }
+    return JSON.parse(content);
 
   } catch (error) {
-    console.log("❌ AI ERROR =>", JSON.stringify(error.response?.data, null, 2) || error.message);
-    throw new Error("AI request failed. Google servers might be completely overloaded right now.");
+    console.log("❌ GROQ ERROR =>", JSON.stringify(error.response?.data || error.message, null, 2));
+    throw new Error("Groq API request failed. Please try again.");
   }
 };

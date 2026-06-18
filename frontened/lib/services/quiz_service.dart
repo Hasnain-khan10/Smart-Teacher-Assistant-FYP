@@ -38,6 +38,16 @@ class QuizService {
     throw Exception(data['message'] ?? "Failed to fetch results");
   }
 
+  // 🔥 NEW FUNCTION: Backend par naye marks override karne ke liye
+  Future<bool> updateManualMarks({required String attemptId, required int manualScore}) async {
+    final response = await http.put(
+      Uri.parse("${Api.baseUrl}/quizzes/manual-score/$attemptId"),
+      headers: await _headers(),
+      body: jsonEncode({"manualScore": manualScore}),
+    );
+    return response.statusCode == 200;
+  }
+
   Future<bool> createQuiz({
     required String courseId, required String title, required String type,
     List? questions, List? shortQuestions, List? longQuestions
@@ -67,50 +77,24 @@ class QuizService {
   }
 
   Future<Map<String, dynamic>> scanAIQuizMarks({
-    required String courseId,
-    required String studentId,
-    required String title,
-    required String quizId, // 🔥 FIX: quizId parameter add kiya
-    required List<File> files
+    required String courseId, required String studentId, required String title, required String quizId, required List<File> files
   }) async {
     final request = http.MultipartRequest("POST", Uri.parse("${Api.baseUrl}/quizzes/scan-ai-marks"));
     request.headers.addAll(await _multipartHeaders());
-    request.fields['courseId'] = courseId;
-    request.fields['studentId'] = studentId;
-    request.fields['title'] = title;
-    request.fields['quizId'] = quizId; // 🔥 FIX: fields mein add kiya
+    request.fields['courseId'] = courseId; request.fields['studentId'] = studentId;
+    request.fields['title'] = title; request.fields['quizId'] = quizId;
 
     for (var file in files) {
       request.files.add(await http.MultipartFile.fromPath('files', file.path));
     }
-
     final streamedResponse = await request.send();
     final response = await http.Response.fromStream(streamedResponse);
-
-    if (response.statusCode != 200) {
-      throw Exception("Backend Error (${response.statusCode}): ${response.body}");
-    }
-
+    if (response.statusCode != 200) throw Exception("Backend Error (${response.statusCode}): ${response.body}");
     return jsonDecode(response.body);
   }
 
-  Future<bool> updateQuiz({
-    required String quizId,
-    String? title,
-    List? questions,
-    List? shortQuestions,
-    List? longQuestions,
-  }) async {
-    final response = await http.put(
-        Uri.parse("${Api.baseUrl}/quizzes/$quizId"),
-        headers: await _headers(),
-        body: jsonEncode({
-          if (title != null) "title": title,
-          if (questions != null) "questions": questions,
-          if (shortQuestions != null) "shortQuestions": shortQuestions,
-          if (longQuestions != null) "longQuestions": longQuestions,
-        })
-    );
+  Future<bool> updateQuiz({required String quizId, String? title, List? questions, List? shortQuestions, List? longQuestions}) async {
+    final response = await http.put(Uri.parse("${Api.baseUrl}/quizzes/$quizId"), headers: await _headers(), body: jsonEncode({if (title != null) "title": title, if (questions != null) "questions": questions, if (shortQuestions != null) "shortQuestions": shortQuestions, if (longQuestions != null) "longQuestions": longQuestions,}));
     return response.statusCode == 200;
   }
 
@@ -122,10 +106,8 @@ class QuizService {
   Future<String?> generateAIQuestionQuizPdf({required String quizId}) async {
     final response = await http.get(Uri.parse("${Api.baseUrl}/quizzes/pdf/$quizId"), headers: await _headers());
     if (response.statusCode == 200) {
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/ai_exam_$quizId.pdf');
-      await file.writeAsBytes(response.bodyBytes);
-      return file.path;
+      final dir = await getTemporaryDirectory(); final file = File('${dir.path}/ai_exam_$quizId.pdf');
+      await file.writeAsBytes(response.bodyBytes); return file.path;
     }
     return null;
   }
@@ -133,70 +115,44 @@ class QuizService {
   Future<String?> generateQuestionQuizPDF({required String quizId, required String courseId, String? title}) async {
     final response = await http.get(Uri.parse("${Api.baseUrl}/quizzes/pdf/$quizId"), headers: await _headers());
     if (response.statusCode == 200) {
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/exam_$quizId.pdf');
-      await file.writeAsBytes(response.bodyBytes);
-      return file.path;
+      final dir = await getTemporaryDirectory(); final file = File('${dir.path}/exam_$quizId.pdf');
+      await file.writeAsBytes(response.bodyBytes); return file.path;
     }
     return null;
   }
 
-  Future<Map<String, dynamic>> createAIMCQQuiz({
-    required String courseId, required String prompt, required String difficulty,
-    required int questionCount, required int marksPerQuestion, File? file
-  }) async {
-    final url = Uri.parse("${Api.baseUrl}/ai/quizzes/mcq"); // Double check this matches backend too if needed later
+  Future<Map<String, dynamic>> createAIMCQQuiz({required String courseId, required String prompt, required String difficulty, required int questionCount, required int marksPerQuestion, File? file}) async {
+    final url = Uri.parse("${Api.baseUrl}/ai/quizzes/mcq");
     if (file != null && file.path.isNotEmpty) {
       final req = http.MultipartRequest("POST", url)..headers.addAll(await _multipartHeaders());
-      req.fields.addAll({
-        "courseId": courseId, "course": courseId,
-        "topic": prompt, "prompt": prompt,
-        "difficulty": difficulty, "questionCount": questionCount.toString(), "marksPerQuestion": marksPerQuestion.toString()
-      });
+      req.fields.addAll({"courseId": courseId, "course": courseId, "topic": prompt, "prompt": prompt, "difficulty": difficulty, "questionCount": questionCount.toString(), "marksPerQuestion": marksPerQuestion.toString()});
       req.files.add(await http.MultipartFile.fromPath("book", file.path));
-      final res = await http.Response.fromStream(await req.send());
+      final streamedResponse = await req.send().timeout(const Duration(seconds: 90));
+      final res = await http.Response.fromStream(streamedResponse);
       final data = jsonDecode(res.body);
       if (res.statusCode == 200 && data['success'] == true) return data;
       throw Exception(data['message'] ?? "AI Generation Failed");
     } else {
-      final res = await http.post(url, headers: await _headers(), body: jsonEncode({
-        "courseId": courseId, "course": courseId,
-        "topic": prompt, "prompt": prompt,
-        "difficulty": difficulty, "questionCount": questionCount, "marksPerQuestion": marksPerQuestion
-      }));
+      final res = await http.post(url, headers: await _headers(), body: jsonEncode({"courseId": courseId, "course": courseId, "topic": prompt, "prompt": prompt, "difficulty": difficulty, "questionCount": questionCount, "marksPerQuestion": marksPerQuestion})).timeout(const Duration(seconds: 90));
       final data = jsonDecode(res.body);
       if (res.statusCode == 200 && data['success'] == true) return data;
       throw Exception(data['message'] ?? "AI Generation Failed");
     }
   }
 
-  Future<Map<String, dynamic>> createAIQuestionQuiz({
-    required String courseId, required String prompt, required String difficulty, required String type,
-    File? file, int? shortCount, int? shortMarks, int? shortEachMark, int? longCount, int? longMarks, int? longEachMark
-  }) async {
-    final url = Uri.parse("${Api.baseUrl}/ai/quizzes/descriptive"); // Double check this matches backend too if needed later
+  Future<Map<String, dynamic>> createAIQuestionQuiz({required String courseId, required String prompt, required String difficulty, required String type, File? file, int? shortCount, int? shortMarks, int? shortEachMark, int? longCount, int? longMarks, int? longEachMark}) async {
+    final url = Uri.parse("${Api.baseUrl}/ai/quizzes/descriptive");
     if (file != null && file.path.isNotEmpty) {
       final req = http.MultipartRequest("POST", url)..headers.addAll(await _multipartHeaders());
-      req.fields.addAll({
-        "courseId": courseId, "course": courseId,
-        "topic": prompt, "prompt": prompt,
-        "difficulty": difficulty, "type": type,
-        "shortCount": (shortCount ?? 0).toString(), "shortEachMark": (shortEachMark ?? 2).toString(),
-        "longCount": (longCount ?? 0).toString(), "longEachMark": (longEachMark ?? 5).toString()
-      });
+      req.fields.addAll({"courseId": courseId, "course": courseId, "topic": prompt, "prompt": prompt, "difficulty": difficulty, "type": type, "shortCount": (shortCount ?? 0).toString(), "shortEachMark": (shortEachMark ?? 2).toString(), "longCount": (longCount ?? 0).toString(), "longEachMark": (longEachMark ?? 5).toString()});
       req.files.add(await http.MultipartFile.fromPath("book", file.path));
-      final res = await http.Response.fromStream(await req.send());
+      final streamedResponse = await req.send().timeout(const Duration(seconds: 90));
+      final res = await http.Response.fromStream(streamedResponse);
       final data = jsonDecode(res.body);
       if (res.statusCode == 200 && data['success'] == true) return data;
       throw Exception(data['message'] ?? "AI Written Exam Generation Failed");
     } else {
-      final res = await http.post(url, headers: await _headers(), body: jsonEncode({
-        "courseId": courseId, "course": courseId,
-        "topic": prompt, "prompt": prompt,
-        "difficulty": difficulty, "type": type,
-        "shortCount": shortCount ?? 0, "shortEachMark": shortEachMark ?? 2,
-        "longCount": longCount ?? 0, "longEachMark": longEachMark ?? 5
-      }));
+      final res = await http.post(url, headers: await _headers(), body: jsonEncode({"courseId": courseId, "course": courseId, "topic": prompt, "prompt": prompt, "difficulty": difficulty, "type": type, "shortCount": shortCount ?? 0, "shortEachMark": shortEachMark ?? 2, "longCount": longCount ?? 0, "longEachMark": longEachMark ?? 5})).timeout(const Duration(seconds: 90));
       final data = jsonDecode(res.body);
       if (res.statusCode == 200 && data['success'] == true) return data;
       throw Exception(data['message'] ?? "AI Written Exam Generation Failed");
