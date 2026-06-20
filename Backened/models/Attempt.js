@@ -8,66 +8,44 @@ const attemptSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-
     quiz: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Quiz",
       required: true,
       index: true,
     },
-
     answers: [
       {
-        selectedAnswer: {
-          type: String,
-          default: null,
-          required: false,
-        },
+        selectedAnswer: { type: String, default: null },
+        question_text: { type: String, default: "" },
+        correct_answer: { type: String, default: "" },
+        obtained_marks: { type: Number, default: 0 },
+        max_marks: { type: Number, default: 0 },
+        isCorrect: { type: Boolean, default: false },
+        scannedImage: { type: String, default: null },
+        aiFeedback: { type: String, default: "" }, // 🔥 NEW: AI Reason for Marks
       },
     ],
-
-    // =========================
-    // SCORE
-    // =========================
     score: {
       type: Number,
       required: true,
       default: 0,
     },
-
-    // =========================
-    // TOTAL MARKS
-    // =========================
     total: {
       type: Number,
       default: 0,
     },
-
-    // =========================
-    // AI SCAN
-    // =========================
     evaluatedByAI: {
       type: Boolean,
       default: false,
     },
-
     scannedPaper: [
-  {
-    type: String,
-  },
-],
-
+      { type: String },
+    ],
   },
   { timestamps: true }
 );
 
-// Prevent multiple attempts
-attemptSchema.index(
-  { student: 1, quiz: 1 },
-  { unique: true }
-);
+attemptSchema.index({ student: 1, quiz: 1 }, { unique: true });
 
-module.exports = mongoose.model(
-  "Attempt",
-  attemptSchema
-);
+module.exports = mongoose.model("Attempt", attemptSchema);

@@ -6,40 +6,78 @@ class QuizResultScreen extends StatelessWidget {
   const QuizResultScreen({super.key});
   static const String routeName = '/quiz-result';
 
+  void _showFullScreenImage(BuildContext context, String imageUrl) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(10),
+        child: InteractiveViewer(
+          panEnabled: true,
+          boundaryMargin: const EdgeInsets.all(20),
+          minScale: 0.5,
+          maxScale: 4,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(15),
+            child: Image.network(imageUrl, fit: BoxFit.contain),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final args = ModalRoute.of(context)!.settings.arguments;
     int score = 0;
     int total = 0;
     List review = [];
+    bool isAIEvaluated = false;
 
-    // Case 1: Agar data Map mein aa raha hai
     if (args is Map) {
       score = (args['score'] ?? 0).toInt();
       total = (args['total'] ?? 0).toInt();
       review = args['review'] ?? [];
-    }
-    // Case 2: Agar pura Quiz Model object aa raha hai
-    else if (args is Quiz) {
+    } else if (args is Quiz) {
       score = (args.score ?? 0).toInt();
-      total = (args.totalMarks ?? args.questions.length).toInt();
+      total = (args.totalMarks ?? 0).toInt();
+      if (total == 0) total = args.questions.length;
 
-      // ✅ Yahan hum Questions aur Answers ko combine kar rahe hain
-      review = (args.selectedAnswers ?? []).asMap().entries.map((e) {
-        int index = e.key;
-        var ans = e.value; // Yeh student ka answer hai
-        var q = args.questions[index]; // Yeh question object hai
+      isAIEvaluated = args.evaluatedByAI ?? false;
 
-        return {
-          "question": q.question,
-          "selectedAnswer": ans["selectedAnswer"] ?? "",
-          "correctAnswer": q.correctAnswer,
-          "isCorrect": ans["selectedAnswer"] == q.correctAnswer,
-        };
-      }).toList();
+      if (isAIEvaluated) {
+        review = (args.selectedAnswers ?? []).map((ans) {
+          return {
+            "question": ans["question_text"] ?? "Descriptive Question",
+            "selectedAnswer": ans["student_answer"] ?? "Checked via Paper Scan",
+            "correctAnswer": ans["correct_answer"] ?? "Refer to AI Rubric",
+            "isCorrect": (ans["obtained_marks"] ?? 0) > 0,
+            "obtained_marks": ans["obtained_marks"] ?? 0,
+            "max_marks": ans["max_marks"] ?? 0,
+            "scannedImageUrl": ans["scannedImageUrl"],
+            "aiFeedback": ans["aiFeedback"] ?? "", // 🔥 GET AI REASON FROM DB
+          };
+        }).toList();
+      } else {
+        review = (args.selectedAnswers ?? []).asMap().entries.map((e) {
+          int index = e.key;
+          var ans = e.value;
+          if (index < args.questions.length) {
+            var q = args.questions[index];
+            return {
+              "question": q.question,
+              "selectedAnswer": ans["selectedAnswer"] ?? "",
+              "correctAnswer": q.correctAnswer,
+              "isCorrect": ans["selectedAnswer"] == q.correctAnswer,
+              "scannedImageUrl": null,
+              "aiFeedback": "",
+            };
+          }
+          return null;
+        }).where((item) => item != null).toList();
+      }
     }
 
-    // Logic for Summary Stats
     final correct = review.where((e) => e['isCorrect'] == true).length;
     final wrong = review.where((e) => e['isCorrect'] == false && (e['selectedAnswer'] ?? '') != "").length;
     final skipped = review.where((e) => (e['selectedAnswer'] ?? '') == "" || e['selectedAnswer'] == null).length;
@@ -57,7 +95,6 @@ class QuizResultScreen extends StatelessWidget {
       ),
       body: Column(
         children: [
-          // HEADER SCORE
           Container(
             padding: const EdgeInsets.symmetric(vertical: 30),
             width: double.infinity,
@@ -67,47 +104,59 @@ class QuizResultScreen extends StatelessWidget {
             ),
             child: Column(
               children: [
-                const Text("Total Score Achieved", style: TextStyle(color: Colors.white70, fontSize: 16)),
+                const Text("Grand Total Score", style: TextStyle(color: Colors.white70, fontSize: 16)),
                 const SizedBox(height: 8),
                 Text("$score / $total", style: const TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold)),
+                if (isAIEvaluated)
+                  Container(
+                    margin: const EdgeInsets.only(top: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    decoration: BoxDecoration(color: Colors.greenAccent.withAlpha(50), borderRadius: BorderRadius.circular(20)),
+                    child: const Text("Verified by AI Teacher Scan", style: TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                  )
               ],
             ),
           ),
           const SizedBox(height: 20),
 
-          // SUMMARY CARDS
+          if (!isAIEvaluated)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  _statCard("Correct", correct, Colors.green),
+                  const SizedBox(width: 12),
+                  _statCard("Wrong", wrong, Colors.red),
+                  const SizedBox(width: 12),
+                  _statCard("Skipped", skipped, Colors.orange),
+                ],
+              ),
+            ),
+
+          const SizedBox(height: 20),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                _statCard("Correct", correct, Colors.green),
-                const SizedBox(width: 12),
-                _statCard("Wrong", wrong, Colors.red),
-                const SizedBox(width: 12),
-                _statCard("Skipped", skipped, Colors.orange),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 20),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: Text("Detailed Breakdown", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
+              child: Text(isAIEvaluated ? "Question-Wise Evaluation" : "Detailed Breakdown", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
             ),
           ),
           const SizedBox(height: 10),
 
-          // LIST OF Q/A
           Expanded(
-            child: ListView.builder(
+            child: review.isEmpty
+                ? const Center(child: Text("No detailed review available.", style: TextStyle(color: Colors.grey)))
+                : ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               itemCount: review.length,
               itemBuilder: (context, index) {
                 final item = review[index];
                 final isSkipped = (item['selectedAnswer'] ?? '') == "";
                 final isCorrect = item['isCorrect'] ?? false;
+                final obtainedMarks = item['obtained_marks'];
+                final maxMarks = item['max_marks'];
+                final String? imageUrl = item['scannedImageUrl'];
+                final String aiFeedback = item['aiFeedback'] ?? ""; // 🔥 GET FEEDBACK
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 12),
@@ -116,50 +165,76 @@ class QuizResultScreen extends StatelessWidget {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: isSkipped ? Colors.orange.shade200 : (isCorrect ? Colors.green.shade200 : Colors.red.shade200),
+                      color: isAIEvaluated ? Colors.grey.shade300 : (isSkipped ? Colors.orange.shade200 : (isCorrect ? Colors.green.shade200 : Colors.red.shade200)),
                     ),
+                    boxShadow: [BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 5)],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text("Q${index + 1}. ${item['question']}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                      const Divider(height: 20),
-                      Text(
-                        isSkipped ? "Skipped" : "Your Answer: ${item['selectedAnswer']}",
-                        style: TextStyle(
-                          color: isSkipped ? Colors.orange : (isCorrect ? Colors.green : Colors.red),
-                          fontWeight: FontWeight.bold,
-                        ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: Text("Q${index + 1}. ${item['question']}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15))),
+                          if (isAIEvaluated && maxMarks != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(8)),
+                              child: Text("$obtainedMarks / $maxMarks", style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.bold, fontSize: 14)),
+                            ),
+                        ],
                       ),
-                      if (!isCorrect && !isSkipped)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text("Correct Answer: ${item['correctAnswer']}", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                      const Divider(height: 20),
+
+                      if (!isAIEvaluated) ...[
+                        Text(
+                          isSkipped ? "Skipped" : "Your Answer: ${item['selectedAnswer']}",
+                          style: TextStyle(color: isSkipped ? Colors.orange : (isCorrect ? Colors.green : Colors.red), fontWeight: FontWeight.bold,),
                         ),
+                        if (!isCorrect && !isSkipped)
+                          Padding(padding: const EdgeInsets.only(top: 4), child: Text("Correct Answer: ${item['correctAnswer']}", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold))),
+                      ] else ...[
+                        Text("Checked by AI Examiner", style: TextStyle(color: Colors.grey.shade600, fontStyle: FontStyle.italic)),
+                      ],
+
+                      // 🔥 SHOW AI FEEDBACK FOR STUDENT
+                      if (aiFeedback.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(top: 10),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.amber.shade200)),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.info_outline, color: Colors.amber, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(child: Text(aiFeedback, style: TextStyle(color: Colors.amber.shade900, fontSize: 13, fontStyle: FontStyle.italic, height: 1.4))),
+                            ],
+                          ),
+                        ),
+
+                      if (imageUrl != null && imageUrl.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        GestureDetector(
+                          onTap: () => _showFullScreenImage(context, imageUrl),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.network(
+                              imageUrl,
+                              height: 120,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (c,e,s) => Container(height: 120, color: Colors.grey.shade100, child: const Center(child: Icon(Icons.broken_image, color: Colors.grey))),
+                            ),
+                          ),
+                        )
+                      ]
                     ],
                   ),
                 );
               },
             ),
           ),
-
-          // AI FEEDBACK BUTTON
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: ElevatedButton.icon(
-                onPressed: () => Navigator.pushNamed(context, '/quiz-tips'),
-                icon: const Icon(Icons.auto_awesome, color: Colors.white),
-                label: const Text("View AI Feedback", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF7C3AED),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-              ),
-            ),
-          )
         ],
       ),
     );
@@ -169,11 +244,7 @@ class QuizResultScreen extends StatelessWidget {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
+        decoration: BoxDecoration(color: color.withAlpha(25), borderRadius: BorderRadius.circular(16), border: Border.all(color: color.withAlpha(75))),
         child: Column(
           children: [
             Text("$value", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color)),

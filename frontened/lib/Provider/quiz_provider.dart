@@ -15,7 +15,7 @@ class QuizProvider with ChangeNotifier {
   bool _isGeneratingAI = false;
   bool _isGeneratingPdf = false;
   bool _isScanningAI = false;
-  bool _isUpdatingManualScore = false; // 🔥 Naya state
+  bool _isUpdatingManualScore = false;
 
   Map<String, dynamic>? _scanResult;
   bool _isLoadingQuizResults = false;
@@ -31,7 +31,7 @@ class QuizProvider with ChangeNotifier {
   bool get isGeneratingAI => _isGeneratingAI;
   bool get isGeneratingPdf => _isGeneratingPdf;
   bool get isScanningAI => _isScanningAI;
-  bool get isUpdatingManualScore => _isUpdatingManualScore; // 🔥 Getter
+  bool get isUpdatingManualScore => _isUpdatingManualScore;
   Map<String, dynamic>? get scanResult => _scanResult;
   bool get isLoadingQuizResults => _isLoadingQuizResults;
   Map<String, dynamic>? get quizResults => _quizResults;
@@ -39,17 +39,14 @@ class QuizProvider with ChangeNotifier {
 
   void clearError() { _error = null; notifyListeners(); }
 
-  // 🔥 NEW FUNCTION: Call to update score manually
-  Future<bool> updateManualMarks({required String attemptId, required int manualScore, required String quizId}) async {
+  // 🔥 UPDATED: Added questionIndex
+  Future<bool> updateManualMarks({required String attemptId, required int manualScore, required String quizId, int? questionIndex}) async {
     _isUpdatingManualScore = true;
     _error = null;
     notifyListeners();
     try {
-      final success = await _quizService.updateManualMarks(attemptId: attemptId, manualScore: manualScore);
-      if (success) {
-        await fetchQuizResults(quizId); // Refresh result screen
-      }
-      return success;
+      final success = await _quizService.updateManualMarks(attemptId: attemptId, manualScore: manualScore, questionIndex: questionIndex);
+      return success; // Notice: Refreshes are now handled in the Screen directly to prevent UI blinking
     } catch (e) {
       _error = e.toString().replaceAll("Exception:", "").trim();
       return false;
@@ -59,7 +56,6 @@ class QuizProvider with ChangeNotifier {
     }
   }
 
-  // ============== Baqi Purana Code Bilkul Same ==============
   Future<void> fetchAllQuizzes() async {
     _isLoading = true; _error = null; notifyListeners();
     try { _quizzes = await _quizService.getAllQuizzes(); }
@@ -104,10 +100,17 @@ class QuizProvider with ChangeNotifier {
     finally { _isAttempting = false; notifyListeners(); }
   }
 
-  Future<Map<String, dynamic>?> scanAIQuizMarks({String? courseId, String? studentId, String? title, String? quizId, List<File>? files, dynamic arg1}) async {
+  // 🔥 UPDATED: Added Question-Wise properties
+  Future<Map<String, dynamic>?> scanAIQuizMarks({
+    String? courseId, String? studentId, String? title, String? quizId, List<File>? files, dynamic arg1,
+    int? questionIndex, String? questionText, int? maxMarks
+  }) async {
     _isScanningAI = true; _error = null; notifyListeners();
     try {
-      final result = await _quizService.scanAIQuizMarks(courseId: courseId ?? "", studentId: studentId ?? "", title: title ?? "", quizId: quizId ?? "", files: files ?? []);
+      final result = await _quizService.scanAIQuizMarks(
+          courseId: courseId ?? "", studentId: studentId ?? "", title: title ?? "", quizId: quizId ?? "", files: files ?? [],
+          questionIndex: questionIndex, questionText: questionText, maxMarks: maxMarks
+      );
       _scanResult = result; return result;
     } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return null; }
     finally { _isScanningAI = false; notifyListeners(); }

@@ -1,8 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
-// 🔥 FIX: Small 'p' ko Capital 'P' kar diya gaya hai (Aapke original structure ke mutabiq)
 import 'package:frontened/Provider/course_provider.dart';
 import 'package:frontened/Provider/quiz_provider.dart';
 
@@ -44,63 +42,32 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
     });
   }
 
-  Future<void> _startScanningProcess(BuildContext context, String studentId, String studentName) async {
-    final List<File>? scannedPages = await Navigator.push(
+  void _refreshData() {
+    context.read<QuizProvider>().fetchQuizResults(widget.quizId, quizId: widget.quizId);
+  }
+
+  // 🔥 UPDATED: Added isResultView flag to differentiate between Tabs
+  void _openStudentEvaluation(String studentId, String studentName, List results, {required bool isResultView}) {
+    final attempt = results.firstWhere((r) => r["studentId"] == studentId, orElse: () => null);
+
+    Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => TeacherScannerOverlay(
+        builder: (_) => TeacherQuizEvaluationScreen(
+          attemptId: attempt != null ? attempt["attemptId"] : "",
+          quizId: widget.quizId,
+          courseId: widget.courseId,
+          studentId: studentId,
           studentName: studentName,
-          quizTitle: widget.quizTitle,
+          quizType: widget.quizType,
+          score: attempt != null ? attempt["score"] : 0,
+          totalMarks: widget.totalMarks,
+          detailedAnswers: attempt != null ? attempt["detailedAnswers"] : [],
+          scannedPaperUrls: attempt != null ? List<String>.from(attempt["scannedPaperUrls"] ?? []) : [],
+          isResultView: isResultView, // 🔥 Pass flag to next screen
         ),
       ),
-    );
-
-    if (scannedPages != null && scannedPages.isNotEmpty) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: const Row(
-            children: [
-              CircularProgressIndicator(color: Color(0xFF4F46E5)),
-              SizedBox(width: 20),
-              Expanded(
-                child: Text("🤖 AI is evaluating...\nPlease wait, this may take a minute.", style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
-              ),
-            ],
-          ),
-        ),
-      );
-
-      final result = await context.read<QuizProvider>().scanAIQuizMarks(
-        courseId: widget.courseId,
-        studentId: studentId,
-        title: widget.quizTitle,
-        quizId: widget.quizId,
-        files: scannedPages,
-      );
-
-      if (mounted) Navigator.pop(context);
-
-      if (result != null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("✅ AI Auto-Grading Completed!"), backgroundColor: Colors.green),
-          );
-
-          await context.read<QuizProvider>().fetchQuizResults(widget.quizId, quizId: widget.quizId);
-          setState(() => _activeView = "results");
-        }
-      } else {
-        final errorMessage = context.read<QuizProvider>().error ?? "Server Overloaded. Try again.";
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("❌ Scan Failed: $errorMessage"), backgroundColor: Colors.red),
-          );
-        }
-      }
-    }
+    ).then((_) => _refreshData());
   }
 
   @override
@@ -197,7 +164,7 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
                 child: Row(
                   children: [
                     _toggleButton("Results View", "results", Icons.analytics_outlined),
-                    _toggleButton("AI Scanning", "scanning", Icons.document_scanner_outlined),
+                    _toggleButton("Scan / Evaluate", "scanning", Icons.document_scanner_outlined),
                   ],
                 ),
               ),
@@ -206,7 +173,7 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
           Expanded(
             child: (isMcqQuiz || _activeView == "results")
                 ? _buildResultsList(results)
-                : _buildScanningList(enrolledStudents),
+                : _buildScanningList(enrolledStudents, results),
           ),
         ],
       ),
@@ -241,33 +208,13 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
       itemBuilder: (context, index) {
         final r = results[index] ?? {};
         final name = r["name"] ?? "Unknown Student";
+        final studentId = r["studentId"] ?? "";
         final marks = (r["score"] ?? 0).toInt();
         final evaluatedByAI = r["evaluatedByAI"] ?? false;
 
-        final String attemptId = r["attemptId"] ?? "";
-        final List<String> scannedPaperUrls = List<String>.from(r["scannedPaperUrls"] ?? []);
-        final List detailedAnswers = r["detailedAnswers"] ?? [];
-        final String aiFeedback = r["aiFeedback"] ?? "Evaluation successfully loaded.";
-
         return GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => TeacherQuizEvaluationScreen(
-                  attemptId: attemptId,
-                  quizId: widget.quizId,
-                  scannedPaperUrls: scannedPaperUrls,
-                  studentName: name,
-                  quizType: widget.quizType,
-                  score: marks,
-                  totalMarks: widget.totalMarks,
-                  detailedAnswers: detailedAnswers,
-                  aiFeedback: aiFeedback,
-                ),
-              ),
-            );
-          },
+          // 🔥 Teacher is viewing results, so isResultView is TRUE
+          onTap: () => _openStudentEvaluation(studentId, name, results, isResultView: true),
           child: Container(
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -275,7 +222,6 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: Colors.grey.shade200),
-              // Changed withOpacity to withValues to resolve the yellow warning for a perfectly clean code
               boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
             ),
             child: Row(
@@ -294,7 +240,6 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  // Changed withOpacity to withValues here as well
                   decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
                   child: Text("$marks / ${widget.totalMarks}", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
                 ),
@@ -306,7 +251,7 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
     );
   }
 
-  Widget _buildScanningList(List students) {
+  Widget _buildScanningList(List students, List results) {
     if (students.isEmpty) return const Center(child: Text("No students enrolled in this course."));
     return ListView.builder(
       padding: const EdgeInsets.all(16),
@@ -316,6 +261,9 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
         final studentName = s["name"] ?? "Enrolled Student";
         final studentId = s["_id"] ?? s["id"] ?? "";
 
+        final attempt = results.firstWhere((r) => r["studentId"] == studentId, orElse: () => null);
+        final bool isEvaluated = attempt != null && attempt["evaluatedByAI"] == true;
+
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -323,7 +271,6 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.grey.shade200),
-            // Changed withOpacity to withValues
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
           ),
           child: Row(
@@ -336,16 +283,17 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
                   children: [
                     Text(studentName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                     const SizedBox(height: 2),
-                    const Text("Ready for AI Paper Scanning", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    Text(isEvaluated ? "Partially/Fully Evaluated" : "Pending Evaluation", style: TextStyle(fontSize: 12, color: isEvaluated ? Colors.green : Colors.grey)),
                   ],
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: () => _startScanningProcess(context, studentId, studentName),
-                icon: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
-                label: const Text("Scan", style: TextStyle(color: Colors.white)),
+                // 🔥 Teacher wants to scan, so isResultView is FALSE
+                onPressed: () => _openStudentEvaluation(studentId, studentName, results, isResultView: false),
+                icon: const Icon(Icons.open_in_new, size: 16, color: Colors.white),
+                label: const Text("Open", style: TextStyle(color: Colors.white)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4F46E5),
+                  backgroundColor: isEvaluated ? Colors.teal : const Color(0xFF4F46E5),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   elevation: 0,

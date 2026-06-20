@@ -8,13 +8,14 @@ class Quiz {
   final List<SubjectiveQuestion> shortQuestions;
   final List<SubjectiveQuestion> longQuestions;
   final bool isAIScanned;
+  final DateTime? createdAt; // 🔥 Added so sorting works safely
 
-  // 🔥 NEW FIELDS TO FIX YOUR ERRORS
-  final String? course;       // Required for course filtering
-  final bool isCompleted;     // Required for QuizzesScreen
-  final num? score;           // Required for results
-  final List<dynamic>? selectedAnswers; // Required for results
-  final bool? evaluatedByAI;  // Required for UI logic
+  final String? course;
+  final bool isCompleted;
+  final num? score;
+  final List<dynamic>? selectedAnswers;
+  final bool? evaluatedByAI;
+  final List<String>? scannedPaperUrls; // 🔥 Added for Teacher's Scans
 
   Quiz({
     required this.id,
@@ -26,11 +27,13 @@ class Quiz {
     required this.shortQuestions,
     required this.longQuestions,
     required this.isAIScanned,
+    this.createdAt,
     this.course,
     this.isCompleted = false,
     this.score,
     this.selectedAnswers,
     this.evaluatedByAI,
+    this.scannedPaperUrls,
   });
 
   factory Quiz.fromJson(Map<String, dynamic> json) {
@@ -41,13 +44,18 @@ class Quiz {
       type: json['type'] ?? 'mcq',
       totalMarks: json['totalMarks'] ?? 0,
       isAIScanned: json['isAIScanned'] ?? false,
+      createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt']) : null,
 
-      // Fixed Fields for existing screens
-      course: json['course'] is Map ? json['course']['_id'] : json['course'], // Handle populate vs ID
+      course: json['course'] is Map ? json['course']['_id'] : json['course'],
       isCompleted: json['isCompleted'] ?? false,
       score: json['score'],
       selectedAnswers: json['answers'] ?? json['selectedAnswers'],
       evaluatedByAI: json['evaluatedByAI'] ?? false,
+
+      // 🔥 Extracting Scanned papers safely for students
+      scannedPaperUrls: json['scannedPaper'] != null
+          ? List<String>.from(json['scannedPaper'].map((file) => "https://smart-teacher-assistant-fyp.onrender.com/uploads/$file"))
+          : [], // IMPORTANT: Apni API baseUrl yahan adjust kar lena agar domain ho
 
       questions: (json['questions'] as List?)?.map((q) => McqQuestion.fromJson(q)).toList() ?? [],
       shortQuestions: (json['shortQuestions'] as List?)?.map((q) => SubjectiveQuestion.fromJson(q)).toList() ?? [],

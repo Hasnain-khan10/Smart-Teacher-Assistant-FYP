@@ -38,12 +38,12 @@ class QuizService {
     throw Exception(data['message'] ?? "Failed to fetch results");
   }
 
-  // 🔥 NEW FUNCTION: Backend par naye marks override karne ke liye
-  Future<bool> updateManualMarks({required String attemptId, required int manualScore}) async {
+  // 🔥 UPDATED: Now supports Question-wise manual editing
+  Future<bool> updateManualMarks({required String attemptId, required int manualScore, int? questionIndex}) async {
     final response = await http.put(
       Uri.parse("${Api.baseUrl}/quizzes/manual-score/$attemptId"),
       headers: await _headers(),
-      body: jsonEncode({"manualScore": manualScore}),
+      body: jsonEncode({"manualScore": manualScore, "questionIndex": questionIndex}),
     );
     return response.statusCode == 200;
   }
@@ -76,13 +76,19 @@ class QuizService {
     throw Exception(data['message'] ?? "Failed to submit attempt");
   }
 
+  // 🔥 UPDATED: Question-Wise Scan support parameters added
   Future<Map<String, dynamic>> scanAIQuizMarks({
-    required String courseId, required String studentId, required String title, required String quizId, required List<File> files
+    required String courseId, required String studentId, required String title, required String quizId,
+    required List<File> files, int? questionIndex, String? questionText, int? maxMarks
   }) async {
     final request = http.MultipartRequest("POST", Uri.parse("${Api.baseUrl}/quizzes/scan-ai-marks"));
     request.headers.addAll(await _multipartHeaders());
     request.fields['courseId'] = courseId; request.fields['studentId'] = studentId;
     request.fields['title'] = title; request.fields['quizId'] = quizId;
+
+    if (questionIndex != null) request.fields['questionIndex'] = questionIndex.toString();
+    if (questionText != null) request.fields['questionText'] = questionText;
+    if (maxMarks != null) request.fields['maxMarks'] = maxMarks.toString();
 
     for (var file in files) {
       request.files.add(await http.MultipartFile.fromPath('files', file.path));
