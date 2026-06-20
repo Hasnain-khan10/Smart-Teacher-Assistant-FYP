@@ -86,7 +86,7 @@ exports.getAllQuizzes = async (req, res) => {
           answers: attempt ? attempt.answers.map(ans => ({
             ...ans.toObject(),
             scannedImageUrl: ans.scannedImage ? `${req.protocol}://${req.get("host")}/uploads/${ans.scannedImage}` : null,
-            aiFeedback: ans.aiFeedback || "" // 🔥 Passed to Student Frontend
+            aiFeedback: ans.aiFeedback || ""
           })) : [],
         };
       });
@@ -139,7 +139,7 @@ exports.getQuizResults = async (req, res) => {
           obtained_marks: ans.obtained_marks ?? 0,
           max_marks: ans.max_marks ?? 0,
           scannedImageUrl: ans.scannedImage ? `${req.protocol}://${req.get("host")}/uploads/${ans.scannedImage}` : null,
-          aiFeedback: ans.aiFeedback || "" // 🔥 Passed to Teacher Frontend
+          aiFeedback: ans.aiFeedback || ""
         }));
       }
 
@@ -192,7 +192,6 @@ exports.deleteQuiz = async (req, res) => {
     const quiz = await Quiz.findOne({ _id: quizId, teacher: req.user._id });
     if (!quiz) return res.status(404).json({ message: "Quiz not found" });
 
-    // 🔥 MIT-Level Cleanup: Jab Quiz delete ho to uske saare Student Attempts bhi uoar jao
     await Attempt.deleteMany({ quiz: quizId });
     console.log(`🗑️ Deleted all attempts associated with Quiz: ${quizId}`);
 
@@ -255,23 +254,24 @@ exports.scanAIQuizMarks = async (req, res) => {
 
     let visionPrompt = "";
     if (qIndex >= 0) {
-      // 🔥 THE ULTIMATE STRICT PROMPT FOR LLAMA/FREE MODELS
-      visionPrompt = `You are a strictly objective and unforgiving University Examiner.
+      // 🔥 THE ULTIMATE STRICT BUT FAIR PROMPT FOR LLAMA/FREE MODELS
+      visionPrompt = `You are an expert, fair, and highly accurate University Examiner evaluating scanned handwritten exam answers.
 Question you must check against: "${questionText}"
 Maximum Marks: ${maxQMarks}.
 
-CRITICAL INSTRUCTIONS:
-1. RELEVANCE CHECK: First, read the student's handwritten answer. Does it actually answer the specific Question asked?
-2. If the student wrote about a completely different topic (e.g., they wrote about Lists when the question is about File Handling), you MUST give exactly 0 marks.
-3. If the answer is relevant, evaluate its correctness. Give 0 if it is fundamentally wrong.
+CRITICAL GRADING INSTRUCTIONS:
+1. READ CAREFULLY: Accurately read the student's handwritten answer. Do not hallucinate or assume they wrote something else.
+2. FAIR EVALUATION: If the answer is perfectly correct, award full marks. If it is partially correct or contains relevant keywords, award partial marks.
+3. ZERO MARKS: Give exactly 0 marks ONLY if the answer is completely blank, totally unreadable, or fundamentally wrong.
+4. ACCURATE FEEDBACK: Provide a short, constructive 1-line reason based EXACTLY on what the student wrote. Do not make up false accusations.
 
 Output your ENTIRE response as a SINGLE VALID JSON OBJECT ONLY. No other text.
 Format required:
-{"obtained_marks": 0, "feedback": "The question was about File Handling, but the student wrote about Lists in Dart. Completely irrelevant."}`;
+{"obtained_marks": <number>, "feedback": "<1-line honest and accurate feedback>"}`;
     } else {
-      visionPrompt = `You are a strict Examiner. Evaluate out of total marks: ${originalQuiz.totalMarks}.
+      visionPrompt = `You are a fair Examiner. Evaluate out of total marks: ${originalQuiz.totalMarks}.
 CRITICAL INSTRUCTION: Output STRICT JSON ONLY. No other text.
-{"evaluation": {"total_obtained_marks": 0, "feedback": "Brief strict comment"}}`;
+{"evaluation": {"total_obtained_marks": 0, "feedback": "Brief accurate comment"}}`;
     }
 
     const aiData = await callAI({ prompt: visionPrompt, images });
@@ -296,7 +296,7 @@ CRITICAL INSTRUCTION: Output STRICT JSON ONLY. No other text.
       attempt.answers[qIndex].obtained_marks = Math.max(0, Math.min(scoreGot, maxQMarks));
       attempt.answers[qIndex].scannedImage = savedFileNames[0];
       attempt.answers[qIndex].isCorrect = scoreGot > 0;
-      attempt.answers[qIndex].aiFeedback = aiData.feedback || "Checked via AI Scanner. No detailed comment provided.";
+      attempt.answers[qIndex].aiFeedback = aiData.feedback || "Checked via AI Scanner.";
     } else if (aiData.evaluation) {
       attempt.score = Number(aiData.evaluation.total_obtained_marks) || 0;
     }
