@@ -82,7 +82,7 @@ void main() async {
     RemoteNotification? notification = message.notification;
     AndroidNotification? android = message.notification?.android;
     if (notification != null && android != null) {
-      // 🔥 FIXED PERMANENTLY: Named parameters correctly passed to prevent argument exception errors
+      // 🔥 FIXED PERMANENTLY: Added explicit named parameters to resolve compiler restrictions
       flutterLocalNotificationsPlugin.show(
         id: notification.hashCode,
         title: notification.title,

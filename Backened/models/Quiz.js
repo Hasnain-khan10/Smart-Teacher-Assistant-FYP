@@ -10,7 +10,7 @@ const questionSchema = new mongoose.Schema({
     D: { type: String },
   },
   correctAnswer: { type: String },
-  explanation: { type: String, default: "" }, // 🔥 NEW: Rationale for the answer
+  explanation: { type: String, default: "" },
   marks: { type: Number, default: 1 },
 });
 
@@ -24,7 +24,6 @@ const quizSchema = new mongoose.Schema(
     type: { type: String, enum: ["mcq", "question", "mixed"], required: true },
     questions: [questionSchema],
 
-    // 🔥 NEW: Added Ideal Answers & Rubrics for Teachers
     shortQuestions: [
       {
         question: String,
@@ -46,6 +45,13 @@ const quizSchema = new mongoose.Schema(
     totalMarks: { type: Number, default: 0 },
     marksPerQuestion: { type: Number, default: 1 },
     isAIScanned: { type: Boolean, default: false },
+
+    // 🔥 THE HUMAN SOLUTION: Simple Status Switch
+    status: {
+      type: String,
+      enum: ["draft", "live", "locked"],
+      default: "live"
+    },
   },
   { timestamps: true }
 );

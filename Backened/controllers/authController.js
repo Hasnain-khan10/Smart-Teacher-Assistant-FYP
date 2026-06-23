@@ -14,7 +14,7 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 // ============================================
 const generateToken = (user) => {
   return jwt.sign(
-    { id: user._id, role: user.role },
+    { id: user._id || user.id, role: user.role },
     process.env.JWT_SECRET,
     { expiresIn: "7d" }
   );
@@ -27,21 +27,21 @@ exports.signup = async (req, res) => {
   try {
     const {
       name, email, password, role,
-      fatherName, cnic, department, // Common
-      rollNumber, semester, section, // Student
-      qualification, experience, speciality, // Teacher
+      fatherName, cnic, department,
+      rollNumber, semester, section,
+      qualification, experience, speciality,
     } = req.body;
 
     if (!role || !["teacher", "student"].includes(role)) {
       return res.status(400).json({ message: "Role is required and must be valid" });
     }
 
-    const existingUser = await User.findOne({ email });
+    // 🔥 SPEED OPTIMIZATION: .lean() for faster read operations
+    const existingUser = await User.findOne({ email }).lean();
     if (existingUser) {
       return res.status(400).json({ message: "User already exists" });
     }
 
-    // ROLE-BASED VALIDATION
     if (role === "student") {
       if (!fatherName || !rollNumber || !semester || !department || !cnic || !section) {
         return res.status(400).json({ message: "All student fields are required" });
@@ -74,6 +74,7 @@ exports.signup = async (req, res) => {
 
     const user = await User.create(userData);
     const token = generateToken(user);
+
     const userResponse = user.toObject();
     delete userResponse.password;
 
@@ -88,12 +89,14 @@ exports.signup = async (req, res) => {
 };
 
 // ============================================
-// LOGIN
+// LOGIN (SUPER FAST)
 // ============================================
 exports.login = async (req, res) => {
   try {
     const { email, password, role } = req.body;
-    const user = await User.findOne({ email });
+
+    // 🔥 SPEED OPTIMIZATION: .lean() skips Mongoose object hydration, making it lightning fast
+    const user = await User.findOne({ email }).lean();
 
     if (!user) {
       return res.status(400).json({ message: "Invalid credentials" });
@@ -109,13 +112,12 @@ exports.login = async (req, res) => {
     }
 
     const token = generateToken(user);
-    const userResponse = user.toObject();
-    delete userResponse.password;
+    delete user.password; // Works instantly because user is now a plain JS object
 
     res.json({
       message: "Login successful",
       token,
-      user: userResponse,
+      user,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -123,11 +125,12 @@ exports.login = async (req, res) => {
 };
 
 // ============================================
-// PROFILE
+// PROFILE (INSTANT LOAD)
 // ============================================
 exports.getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select("-password");
+    // 🔥 SPEED OPTIMIZATION: Instant read with .lean()
+    const user = await User.findById(req.user._id).select("-password").lean();
     res.json({
       message: "Profile fetched successfully",
       user,
@@ -138,7 +141,7 @@ exports.getProfile = async (req, res) => {
 };
 
 // ============================================
-// UPDATE PROFILE (WITH IMAGE FIX)
+// UPDATE PROFILE (NO REDUNDANT DB CALLS)
 // ============================================
 exports.updateProfile = async (req, res) => {
   try {
@@ -154,27 +157,23 @@ exports.updateProfile = async (req, res) => {
       qualification, experience, speciality,
     } = req.body;
 
-    // UPDATE COMMON FIELDS
     if (name) user.name = name;
     if (fatherName) user.fatherName = fatherName;
     if (cnic) user.cnic = cnic;
     if (department) user.department = department;
 
-    // UPDATE STUDENT FIELDS
     if (user.role === "student") {
       if (rollNumber) user.rollNumber = rollNumber;
       if (semester) user.semester = semester;
       if (section) user.section = section;
     }
 
-    // UPDATE TEACHER FIELDS
     if (user.role === "teacher") {
       if (qualification) user.qualification = qualification;
       if (experience) user.experience = experience;
       if (speciality) user.speciality = speciality;
     }
 
-    // PROFILE IMAGE CLOUDINARY UPLOAD
     if (req.file) {
       const result = await cloudinary.uploader.upload(req.file.path, {
         folder: "profile_images",
@@ -183,7 +182,10 @@ exports.updateProfile = async (req, res) => {
     }
 
     await user.save();
-    const updatedUser = await User.findById(user._id).select("-password");
+
+    // 🔥 SPEED OPTIMIZATION: Removed the duplicate User.findById call. Converted existing object instantly.
+    const updatedUser = user.toObject();
+    delete updatedUser.password;
 
     res.status(200).json({
       message: "Profile updated successfully",
@@ -231,7 +233,8 @@ exports.verifyOTP = async (req, res) => {
     const { email, otp } = req.body;
     if (!email || !otp) return res.status(400).json({ message: "Email and OTP are required" });
 
-    const user = await User.findOne({ email });
+    // 🔥 SPEED OPTIMIZATION: .lean() applied
+    const user = await User.findOne({ email }).lean();
     if (!user) return res.status(404).json({ message: "User not found" });
     if (user.resetOTP !== otp) return res.status(400).json({ message: "Invalid OTP" });
     if (user.resetOTPExpiry < Date.now()) return res.status(400).json({ message: "OTP expired" });
@@ -266,7 +269,7 @@ exports.resetPassword = async (req, res) => {
 };
 
 // ============================================
-// GOOGLE LOGIN
+// GOOGLE LOGIN (ULTRA FAST)
 // ============================================
 exports.googleLogin = async (req, res) => {
   try {
@@ -279,7 +282,9 @@ exports.googleLogin = async (req, res) => {
       audience: process.env.GOOGLE_CLIENT_ID,
     });
     const { email, name } = ticket.getPayload();
-    let user = await User.findOne({ email });
+
+    // 🔥 SPEED OPTIMIZATION: Instant user lookup
+    let user = await User.findOne({ email }).lean();
 
     if (user) {
       if (user.role !== role) {
@@ -295,17 +300,17 @@ exports.googleLogin = async (req, res) => {
       if (role === "teacher") {
         userData.qualification = "Not Provided"; userData.experience = "Not Provided"; userData.speciality = "Not Provided";
       }
-      user = await User.create(userData);
+      const newUser = await User.create(userData);
+      user = newUser.toObject();
     }
 
     const token = generateToken(user);
-    const userResponse = user.toObject();
-    delete userResponse.password;
+    delete user.password; // Fast deletion from plain object
 
     res.status(200).json({
       message: "Google login successful",
       token,
-      user: userResponse,
+      user,
     });
   } catch (error) {
     res.status(401).json({ message: "Google authentication failed", error: error.message });

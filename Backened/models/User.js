@@ -19,6 +19,7 @@ const userSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
+      index: true, // 🔥 BAS YEH EK LINE ADD KARNI HAI!
     },
 
     password: {

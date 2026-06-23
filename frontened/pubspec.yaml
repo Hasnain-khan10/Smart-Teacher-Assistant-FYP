@@ -39,6 +39,9 @@ dependencies:
   flutter_spinkit: ^5.2.1
   google_mlkit_face_detection: ^0.11.0
 
+  # 🔥 SOCKET.IO CLIENT FOR REAL-TIME STREAMING ALERTS
+  socket_io_client: ^2.0.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

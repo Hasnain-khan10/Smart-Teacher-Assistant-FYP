@@ -1,14 +1,15 @@
-import 'dart:async'; // 🔥 Added for Live Timer
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:frontened/Provider/auth_provider.dart';
 import 'package:frontened/Provider/course_provider.dart';
 import 'package:frontened/Provider/quiz_provider.dart';
-import 'package:frontened/models/Quiz/quiz_model.dart'; // 🔥 Required for Quiz Model
+import 'package:frontened/models/Quiz/quiz_model.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontened/screens/Student/Courses/JoinCourseScreen.dart';
 import 'package:frontened/screens/Student/Profile/ProfileScreen.dart';
+import 'package:frontened/services/socket_service.dart'; // 🔥 IMPORTED FOR LIVE PUSH PIPELINE
 
 class MainScreen extends StatefulWidget {
   static const String routeName = '/student-placeholder';
@@ -39,6 +40,16 @@ class _MainScreenState extends State<MainScreen> {
       final courseProvider = context.read<CourseProvider>();
       if (courseProvider.error == null) {
         await _syncCacheAndFindDeleted(courseProvider.courses);
+
+        // 🔥 INITIALIZE LIVE PUSH NOTIFICATIONS GATEWAY FOR ALL ENROLLED COURSES
+        try {
+          List<String> activeCourseIds = courseProvider.courses
+              .map((c) => c.id.toString())
+              .toList();
+          SocketService.initialize(context, activeCourseIds);
+        } catch (e) {
+          debugPrint("Real-time Tunnel Boot Exception Error: $e");
+        }
       }
     }
   }
@@ -242,7 +253,6 @@ class _MainScreenState extends State<MainScreen> {
                 else if (pendingQuizzes.isEmpty)
                   const Text("No pending quizzes. Great job!", style: TextStyle(color: Colors.grey))
                 else
-                // 🔥 REPLACED STATIC CARD WITH LIVE COUNTDOWN ENGINE
                   ...pendingQuizzes.map((quiz) => LiveQuizCard(quiz: quiz)),
               ],
             ),
@@ -253,135 +263,45 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-// =======================================================
-// 🔥 LIVE COUNTDOWN QUIZ CARD ENGINE (MIT STANDARD)
-// =======================================================
-class LiveQuizCard extends StatefulWidget {
+class LiveQuizCard extends StatelessWidget {
   final Quiz quiz;
   const LiveQuizCard({super.key, required this.quiz});
 
   @override
-  State<LiveQuizCard> createState() => _LiveQuizCardState();
-}
-
-class _LiveQuizCardState extends State<LiveQuizCard> {
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    // 1 second ka ticking loop jo card ko live refresh karega
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  String _formatDuration(Duration d) {
-    int hours = d.inHours;
-    int minutes = d.inMinutes.remainder(60);
-    int seconds = d.inSeconds.remainder(60);
-
-    if (hours > 24) {
-      int days = d.inDays;
-      int remainingHours = hours.remainder(24);
-      return "${days}d ${remainingHours}h ${minutes}m";
-    }
-    return "${hours.toString().padLeft(2, '0')}h ${minutes.toString().padLeft(2, '0')}m ${seconds.toString().padLeft(2, '0')}s";
-  }
-
-  @override
   Widget build(BuildContext context) {
-    String timeText = "Active Now";
-    Color statusColor = Colors.green;
-    IconData statusIcon = Icons.play_circle_fill;
-    bool isClickable = true;
-
-    DateTime now = DateTime.now();
-
-    // Check backend timing dates securely
-    if (widget.quiz.openDateTime != null && widget.quiz.deadlineDateTime != null) {
-      DateTime openTime = widget.quiz.openDateTime!.toLocal();
-      DateTime closeTime = widget.quiz.deadlineDateTime!.toLocal();
-
-      if (now.isBefore(openTime)) {
-        // Test is scheduled for the future
-        Duration diff = openTime.difference(now);
-        timeText = "Starts in: ${_formatDuration(diff)}";
-        statusColor = Colors.orange;
-        statusIcon = Icons.lock_clock;
-        isClickable = false; // System locked
-      } else if (now.isBefore(closeTime)) {
-        // Test is live right now!
-        Duration diff = closeTime.difference(now);
-        timeText = "Closes in: ${_formatDuration(diff)}";
-        statusColor = Colors.green;
-        statusIcon = Icons.lock_open;
-        isClickable = true;
-      } else {
-        // Test time is gone
-        timeText = "Expired";
-        statusColor = Colors.red;
-        statusIcon = Icons.block;
-        isClickable = false; // Deadlock
-      }
-    } else {
-      // Fallback for old quizzes that have no dates set
-      timeText = "No exact deadline";
-      statusColor = Colors.green;
-      statusIcon = Icons.assignment;
-      isClickable = true;
-    }
-
     return GestureDetector(
       onTap: () {
-        if (isClickable) {
-          Navigator.pushNamed(context, '/quiz-attempt', arguments: widget.quiz);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(timeText == "Expired" ? "This exam's deadline has passed." : "Please wait! This exam has not started yet."),
-                backgroundColor: Colors.red,
-                behavior: SnackBarBehavior.floating,
-                duration: const Duration(seconds: 2),
-              )
-          );
-        }
+        Navigator.pushNamed(context, '/quiz-attempt', arguments: quiz);
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 500),
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: statusColor.withAlpha(15), // Light background hue based on status
+          color: Colors.green.withAlpha(15),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: statusColor.withAlpha(100), width: 1.5),
+          border: Border.all(color: Colors.green.withAlpha(100), width: 1.5),
         ),
         child: Row(
           children: [
-            Icon(statusIcon, color: statusColor, size: 24),
+            const Icon(Icons.play_circle_fill, color: Colors.green, size: 24),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                      widget.quiz.title,
+                      quiz.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isClickable ? const Color(0xFF1E1B4B) : Colors.grey.shade700)
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E1B4B))
                   ),
                   const SizedBox(height: 6),
-                  Text(timeText, style: TextStyle(color: statusColor, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                  const Text("Active Now", style: TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
                 ],
               ),
             ),
-            Icon(isClickable ? Icons.chevron_right : Icons.lock, color: isClickable ? statusColor : Colors.grey.shade400, size: 22),
+            const Icon(Icons.chevron_right, color: Colors.green, size: 22),
           ],
         ),
       ),

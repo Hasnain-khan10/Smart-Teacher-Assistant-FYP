@@ -36,22 +36,69 @@ class _QuizAttemptScreenState extends State<QuizAttemptScreen> with WidgetsBindi
   Timer? _aiProctorTimer;
   bool _isProcessingFace = false;
 
+  bool _rulesAccepted = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _secureClassroomEnvironment(true);
-    _initializeAIProctoring();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showPreExamRulesDialog();
+    });
   }
 
-  // 🔥 RESTORED NATIVE CHANNELS: Fixed package crash using Android Native system window flags
+  void _showPreExamRulesDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          // 🔥 FIX: Added Expanded to prevent 20-pixel overflow
+          title: Row(
+            children: [
+              const Icon(Icons.gavel, color: Colors.purple, size: 28),
+              const SizedBox(width: 10),
+              Expanded(
+                child: const Text("EXAM RULES & PROCTORING", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purple, fontSize: 16), maxLines: 2),
+              ),
+            ],
+          ),
+          content: const Text(
+            "Welcome to the Secure Exam Environment.\n\n"
+                "🔴 CRITICAL RULES:\n"
+                "1. Do not minimize or switch the app.\n"
+                "2. Do not look away, left, or right.\n"
+                "3. Do not turn or rotate your head.\n"
+                "4. Keep your face clearly in front of the camera.\n\n"
+                "⚠️ You will be given exactly 2 warnings for ANY violation. On the 3rd violation, your exam will be AUTOMATICALLY TERMINATED.",
+            style: TextStyle(fontWeight: FontWeight.w600, height: 1.4),
+          ),
+          actions: [
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.purple),
+              onPressed: () {
+                Navigator.pop(ctx);
+                setState(() => _rulesAccepted = true);
+                _secureClassroomEnvironment(true);
+                _initializeAIProctoring();
+                startTimer();
+              },
+              child: const Text("I Understand & Accept", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _secureClassroomEnvironment(bool enable) async {
     try {
       if (enable) {
         if (Theme.of(context).platform == TargetPlatform.android) {
-          // Native system channel calls execution to bypass window manager failures
-          await const MethodChannel('plugins.flutter.io/window_to_front')
-              .invokeMethod('setFlags', {'flags': 8192}); // FLAG_SECURE execution
+          await const MethodChannel('plugins.flutter.io/window_to_front').invokeMethod('setFlags', {'flags': 8192});
         }
         await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       } else {
@@ -73,14 +120,15 @@ class _QuizAttemptScreenState extends State<QuizAttemptScreen> with WidgetsBindi
       _faceDetector = FaceDetector(
         options: FaceDetectorOptions(
           enableTracking: true,
-          enableClassification: false,
+          enableClassification: true,
           enableContours: false,
+          minFaceSize: 0.1,
         ),
       );
 
       if (mounted) setState(() {});
 
-      _aiProctorTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      _aiProctorTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
         _scanFaceBehaviors();
       });
     } catch (e) {
@@ -90,7 +138,7 @@ class _QuizAttemptScreenState extends State<QuizAttemptScreen> with WidgetsBindi
 
   Future<void> _scanFaceBehaviors() async {
     if (_isProcessingFace || _cameraController == null || !_cameraController!.value.isInitialized) return;
-    if (isSubmitting || autoSubmitted) return;
+    if (isSubmitting || autoSubmitted || !_rulesAccepted) return;
 
     _isProcessingFace = true;
     try {
@@ -98,20 +146,30 @@ class _QuizAttemptScreenState extends State<QuizAttemptScreen> with WidgetsBindi
       final inputImage = InputImage.fromFilePath(imageFile.path);
 
       final List<Face> faces = await _faceDetector!.processImage(inputImage);
+
       File(imageFile.path).delete().catchError((_) {});
 
-      if (!mounted) return;
+      if (!mounted || isSubmitting || autoSubmitted) return;
 
       if (faces.isEmpty) {
-        _triggerCheatingStrike("Face not detected! Please look directly at the screen.");
+        _triggerCheatingStrike("Face not detected! Keep your face clearly in front of the camera.");
       } else if (faces.length > 1) {
-        _triggerCheatingStrike("Multiple faces detected! Keep the environment private.");
+        _triggerCheatingStrike("Multiple faces detected! No other person is allowed in the room.");
       } else {
         final face = faces.first;
+
         if (face.headEulerAngleY != null) {
           double rotationY = face.headEulerAngleY!;
-          if (rotationY > 25 || rotationY < -25) {
-            _triggerCheatingStrike("Looking away detected! Keep your focus strictly on the paper.");
+          if (rotationY > 12 || rotationY < -12) {
+            _triggerCheatingStrike("Head movement detected! Stop looking around and focus on the screen.");
+            return;
+          }
+        }
+
+        if (face.leftEyeOpenProbability != null && face.rightEyeOpenProbability != null) {
+          if (face.leftEyeOpenProbability! < 0.1 || face.rightEyeOpenProbability! < 0.1) {
+            _triggerCheatingStrike("Eyes appear to be closed or looking away down! Keep your eyes on the exam.");
+            return;
           }
         }
       }
@@ -125,27 +183,34 @@ class _QuizAttemptScreenState extends State<QuizAttemptScreen> with WidgetsBindi
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      if (!isSubmitting && !autoSubmitted) {
-        _triggerCheatingStrike("Application environment switch or minimization detected!");
+      if (!isSubmitting && !autoSubmitted && _rulesAccepted) {
+        _triggerCheatingStrike("Application ecosystem switch or screen minimization detected!");
       }
     }
   }
 
   void _triggerCheatingStrike(String reason) {
-    if (isSubmitting || autoSubmitted) return;
+    if (isSubmitting || autoSubmitted || _isWarningOpen || !_rulesAccepted) return;
 
-    proctoringStrikes++;
-    if (proctoringStrikes >= 3) {
-      if (_isWarningOpen) Navigator.pop(context);
-      _autoSubmit("Security Evaluation Lock: $reason (Proctoring Threshold Exceeded)");
-    } else {
-      _showStrictWarningDialog(reason, 3 - proctoringStrikes);
-    }
+    Future.microtask(() {
+      setState(() { proctoringStrikes++; });
+
+      if (proctoringStrikes >= 3) {
+        if (_isWarningOpen) {
+          Navigator.pop(context);
+          _isWarningOpen = false;
+        }
+        _autoSubmit("Security Lock: $reason (Proctoring Threshold Exceeded)");
+      } else {
+        _showStrictWarningDialog(reason, 3 - proctoringStrikes);
+      }
+    });
   }
 
   void _showStrictWarningDialog(String reason, int strikesLeft) {
     if (_isWarningOpen) return;
     _isWarningOpen = true;
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -153,15 +218,18 @@ class _QuizAttemptScreenState extends State<QuizAttemptScreen> with WidgetsBindi
         canPop: false,
         child: AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Row(
+          // 🔥 FIX: Added Expanded to prevent overflow
+          title: Row(
             children: [
-              Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
-              SizedBox(width: 10),
-              Text("AI PROCTOR SECURITY", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red, fontSize: 16)),
+              const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+              const SizedBox(width: 10),
+              Expanded(
+                child: const Text("AI PROCTOR SECURITY", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red, fontSize: 16), maxLines: 2),
+              ),
             ],
           ),
           content: Text(
-            "$reason\n\n⚠️ RULES BREACH: You have $strikesLeft warning(s) left. Next structural violation triggers immediate exam termination.",
+            "$reason\n\n⚠️ RULES BREACH: You have $strikesLeft warning(s) left. The 3rd violation triggers absolute exam termination.",
             style: const TextStyle(fontWeight: FontWeight.w600, height: 1.4),
           ),
           actions: [
@@ -183,7 +251,6 @@ class _QuizAttemptScreenState extends State<QuizAttemptScreen> with WidgetsBindi
   void didChangeDependencies() {
     super.didChangeDependencies();
     quiz = ModalRoute.of(context)!.settings.arguments as Quiz;
-    if (timer == null) startTimer();
   }
 
   void startTimer() {

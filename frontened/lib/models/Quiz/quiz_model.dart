@@ -42,24 +42,38 @@ class Quiz {
     this.deadlineDateTime,
   });
 
+  // 🔥 STRICT PARSER: Backend ki kisi bhi date ko null nahi hone dega
+  static DateTime? _parseDate(dynamic val) {
+    if (val == null) return null;
+    if (val is String) {
+      if (val.trim().isEmpty) return null;
+      try {
+        return DateTime.parse(val).toLocal();
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
   factory Quiz.fromJson(Map<String, dynamic> json) {
     return Quiz(
-      id: json['_id'] ?? '',
+      id: json['_id'] ?? json['id'] ?? '',
       title: json['title'] ?? 'Untitled Quiz',
       description: json['description'] ?? '',
       type: json['type'] ?? 'mcq',
       totalMarks: json['totalMarks'] ?? 0,
       isAIScanned: json['isAIScanned'] ?? false,
-      createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt']) : null,
+      createdAt: _parseDate(json['createdAt']),
       course: json['course'] is Map ? json['course']['_id'] : json['course'],
       isCompleted: json['isCompleted'] ?? false,
       score: json['score'],
       selectedAnswers: json['answers'] ?? json['selectedAnswers'],
       evaluatedByAI: json['evaluatedByAI'] ?? false,
 
-      // 🔥 EXTRACITING TIME CRITERIA FROM BACKEND SECURELY
-      openDateTime: json['openDateTime'] != null ? DateTime.tryParse(json['openDateTime']) : null,
-      deadlineDateTime: json['deadlineDateTime'] != null ? DateTime.tryParse(json['deadlineDateTime']) : null,
+      // 🔥 STRICT DATES ATTACHED
+      openDateTime: _parseDate(json['openDateTime']),
+      deadlineDateTime: _parseDate(json['deadlineDateTime']),
 
       scannedPaperUrls: json['scannedPaper'] != null
           ? List<String>.from(json['scannedPaper'].map((file) => "https://smart-teacher-assistant-fyp.onrender.com/uploads/$file"))

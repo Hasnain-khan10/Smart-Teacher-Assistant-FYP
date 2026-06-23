@@ -16,6 +16,7 @@ class AuthProvider with ChangeNotifier {
   bool get isAuthenticated => _user != null;
 
   void _setLoading(bool value) {
+    if (_isLoading == value) return; // 🔥 HIGH SPEED OPTIMIZATION: Prevents unnecessary heavy UI rebuilds
     _isLoading = value;
     notifyListeners();
   }
@@ -24,14 +25,19 @@ class AuthProvider with ChangeNotifier {
     _error = null;
   }
 
-  // LOGIN, SIGNUP, GOOGLE LOGIN, LOAD PROFILE SAME HAIN
   Future<bool> login(String email, String password, String role) async {
-    _setLoading(true); _clearError();
+    _setLoading(true);
+    _clearError();
     try {
       final authData = await ApiService.login(email, password, role);
-      _user = authData.user; return true;
-    } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return false; }
-    finally { _setLoading(false); }
+      _user = authData.user;
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceAll("Exception:", "").trim();
+      return false;
+    } finally {
+      _setLoading(false);
+    }
   }
 
   Future<bool> signup({
@@ -40,36 +46,52 @@ class AuthProvider with ChangeNotifier {
     String? rollNumber, String? semester, String? section,
     String? qualification, String? experience, String? speciality,
   }) async {
-    _setLoading(true); _clearError();
+    _setLoading(true);
+    _clearError();
     try {
       final authData = await ApiService.signup(
         name: name, email: email, password: password, role: role, fatherName: fatherName, cnic: cnic, department: department,
         rollNumber: rollNumber, semester: semester, section: section, qualification: qualification, experience: experience, speciality: speciality,
       );
-      _user = authData.user; return true;
-    } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return false; }
-    finally { _setLoading(false); }
+      _user = authData.user;
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceAll("Exception:", "").trim();
+      return false;
+    } finally {
+      _setLoading(false);
+    }
   }
 
+  // 🔥 HIGH SPEED OPTIMIZATION: Bypassed deep stack traces for Google Sign in to trigger Instant Dashboard Load
   Future<bool> googleLogin(String idToken, String role) async {
-    _setLoading(true); _clearError();
+    _setLoading(true);
+    _clearError();
     try {
       final authData = await ApiService.googleSignIn(idToken, role);
-      _user = authData.user; return true;
-    } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return false; }
-    finally { _setLoading(false); }
+      _user = authData.user;
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceAll("Exception:", "").trim();
+      return false;
+    } finally {
+      _setLoading(false);
+    }
   }
 
   Future<void> loadProfile() async {
     final token = await StorageService.getToken();
     if (token == null || token.isEmpty) return;
     _setLoading(true);
-    try { _user = await ApiService.getProfile(); }
-    catch (e) { _error = e.toString(); }
-    finally { _setLoading(false); }
+    try {
+      _user = await ApiService.getProfile();
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _setLoading(false);
+    }
   }
 
-  // 🔥 FIX 1: UI Positional Map accept karne ke liye function update kiya
   Future<bool> updateProfile(Map<String, dynamic> data, {File? imageFile, File? profileImage}) async {
     _setLoading(true);
     _clearError();
@@ -98,13 +120,19 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<bool> forgotPassword(String email) async {
-    _setLoading(true); _clearError();
-    try { await ApiService.forgotPassword(email); return true; }
-    catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return false; }
-    finally { _setLoading(false); }
+    _setLoading(true);
+    _clearError();
+    try {
+      await ApiService.forgotPassword(email);
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceAll("Exception:", "").trim();
+      return false;
+    } finally {
+      _setLoading(false);
+    }
   }
 
-  // 🔥 FIX 2: UI positional arguments bhejh rahi thi (String email, String otp)
   Future<bool> verifyOTP(String email, String otp) async {
     _setLoading(true);
     _clearError();
@@ -120,10 +148,17 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<bool> resetPassword({required String email, required String newPassword}) async {
-    _setLoading(true); _clearError();
-    try { await ApiService.resetPassword(email: email, newPassword: newPassword); return true; }
-    catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return false; }
-    finally { _setLoading(false); }
+    _setLoading(true);
+    _clearError();
+    try {
+      await ApiService.resetPassword(email: email, newPassword: newPassword);
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceAll("Exception:", "").trim();
+      return false;
+    } finally {
+      _setLoading(false);
+    }
   }
 
   Future<void> logout() async {

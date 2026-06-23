@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 
 import 'package:frontened/Provider/quiz_provider.dart';
 import 'package:frontened/Provider/course_provider.dart';
@@ -25,9 +24,7 @@ class _TeacherAIMCQSQuizScreenState extends State<TeacherAIMCQSQuizScreen> {
   final marksController = TextEditingController(text: "1");
   String difficulty = "Medium";
 
-  // 🔥 SECURE TIMING CRITERIA
-  DateTime? openDateTime;
-  DateTime? deadlineDateTime;
+  String quizStatus = "live";
 
   @override
   void initState() {
@@ -54,26 +51,9 @@ class _TeacherAIMCQSQuizScreenState extends State<TeacherAIMCQSQuizScreen> {
     if (result != null && result.files.single.path != null) setState(() => pdfFile = File(result.files.single.path!));
   }
 
-  Future<void> _pickDateTime(bool isOpenTime) async {
-    final date = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime(2030));
-    if (date == null) return;
-    if (!mounted) return;
-    final time = await showTimePicker(context: context, initialTime: TimeOfDay.now());
-    if (time == null) return;
-    final selected = DateTime(date.year, date.month, date.day, time.hour, time.minute);
-    setState(() { if (isOpenTime) { openDateTime = selected; } else { deadlineDateTime = selected; } });
-  }
-
   Future<void> _generateQuiz() async {
     if (pdfFile == null && promptController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error: Provide Topic OR Reference Doc!"), backgroundColor: Colors.red)); return;
-    }
-
-    if (openDateTime == null || deadlineDateTime == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please set Open & Deadline Timings!"), backgroundColor: Colors.red)); return;
-    }
-    if (deadlineDateTime!.isBefore(openDateTime!)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Deadline cannot be before Open Time!"), backgroundColor: Colors.red)); return;
     }
 
     final quizProvider = context.read<QuizProvider>();
@@ -87,8 +67,7 @@ class _TeacherAIMCQSQuizScreenState extends State<TeacherAIMCQSQuizScreen> {
       questionCount: int.tryParse(countController.text) ?? 10,
       marksPerQuestion: int.tryParse(marksController.text) ?? 1,
       file: pdfFile,
-      openDateTime: openDateTime!.toIso8601String(),       // 🔥 INJECTED FOR API
-      deadlineDateTime: deadlineDateTime!.toIso8601String(), // 🔥 INJECTED FOR API
+      openDateTime: quizStatus,
     );
 
     if (result != null && mounted) {
@@ -116,13 +95,21 @@ class _TeacherAIMCQSQuizScreenState extends State<TeacherAIMCQSQuizScreen> {
             Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: const Color(0xFF4F46E5).withOpacity(0.05), borderRadius: BorderRadius.circular(12)), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text("Total Exam Marks:", style: TextStyle(fontWeight: FontWeight.bold)), Text("${_calculateTotal()}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Color(0xFF4F46E5)))])),
             const SizedBox(height: 20),
 
-            // 🔥 NEW: SECURE TIME SELECTORS
-            Row(
-              children: [
-                Expanded(child: GestureDetector(onTap: () => _pickDateTime(true), child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.blue.shade200)), child: Column(children: [const Icon(Icons.timer, color: Colors.blue), const SizedBox(height: 4), Text(openDateTime == null ? "Set Open Time" : DateFormat('dd MMM, hh:mm a').format(openDateTime!), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold), textAlign: TextAlign.center)])))),
-                const SizedBox(width: 10),
-                Expanded(child: GestureDetector(onTap: () => _pickDateTime(false), child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.red.shade200)), child: Column(children: [const Icon(Icons.block, color: Colors.red), const SizedBox(height: 4), Text(deadlineDateTime == null ? "Set Deadline" : DateFormat('dd MMM, hh:mm a').format(deadlineDateTime!), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold), textAlign: TextAlign.center)])))),
+            // 🔥 FIX: Added 'isExpanded: true' to avoid Overflow warning!
+            DropdownButtonFormField<String>(
+              isExpanded: true,
+              value: quizStatus,
+              decoration: InputDecoration(
+                labelText: "Exam Visibility Status",
+                prefixIcon: Icon(quizStatus == 'live' ? Icons.visibility : Icons.visibility_off, color: quizStatus == 'live' ? Colors.green : Colors.grey),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              ),
+              items: const [
+                DropdownMenuItem(value: "live", child: Text("Live Now (Visible to Students)", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
+                DropdownMenuItem(value: "draft", child: Text("Locked / Draft (Hidden)", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
               ],
+              onChanged: (val) => setState(() => quizStatus = val!),
             ),
             const SizedBox(height: 20),
 

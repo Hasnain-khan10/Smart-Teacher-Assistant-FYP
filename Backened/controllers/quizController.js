@@ -9,28 +9,41 @@ const sharp = require("sharp");
 
 exports.createQuiz = async (req, res) => {
   try {
-    const { title, type, questions, shortQuestions, longQuestions } = req.body;
+    const { title, type, questions, shortQuestions, longQuestions, openDateTime } = req.body;
     const courseId = req.body.courseId || req.body.course;
+
     if (!courseId || !title || !type) return res.status(400).json({ message: "Missing required fields" });
-    const course = await Course.findOne({ _id: courseId, teacher: req.user._id });
+
+    const course = await Course.findOne({ _id: courseId, teacher: req.user._id }).lean();
     if (!course) return res.status(404).json({ message: "Course not found" });
 
+    const finalStatus = openDateTime === "draft" ? "draft" : "live";
+
+    let quiz;
     if (type === "mcq") {
       const totalMarks = (questions || []).reduce((sum, q) => sum + (q.marks || 1), 0);
-      const quiz = await Quiz.create({ course: courseId, teacher: req.user._id, title, type: "mcq", questions, totalMarks });
-      return res.status(201).json({ message: "MCQ Quiz created successfully", quiz });
-    }
-    if (type === "question") {
+      quiz = await Quiz.create({ course: courseId, teacher: req.user._id, title, type: "mcq", questions, totalMarks, status: finalStatus });
+    } else if (type === "question") {
       const totalMarks = [...(shortQuestions || []), ...(longQuestions || [])].reduce((sum, q) => sum + (q.marks || 0), 0);
-      const quiz = await Quiz.create({ course: courseId, teacher: req.user._id, title, type: "question", shortQuestions: shortQuestions || [], longQuestions: longQuestions || [], totalMarks });
-      return res.status(201).json({ message: "Question Quiz created successfully", quiz });
-    }
-    if (type === "mixed") {
+      quiz = await Quiz.create({ course: courseId, teacher: req.user._id, title, type: "question", shortQuestions: shortQuestions || [], longQuestions: longQuestions || [], totalMarks, status: finalStatus });
+    } else if (type === "mixed") {
       const totalMarks = [...(questions || []), ...(shortQuestions || []), ...(longQuestions || [])].reduce((sum, q) => sum + (q.marks || 0), 0);
-      const quiz = await Quiz.create({ course: courseId, teacher: req.user._id, title, type: "mixed", questions: questions || [], shortQuestions: shortQuestions || [], longQuestions: longQuestions || [], totalMarks });
-      return res.status(201).json({ message: "Mixed Quiz created successfully", quiz });
+      quiz = await Quiz.create({ course: courseId, teacher: req.user._id, title, type: "mixed", questions: questions || [], shortQuestions: shortQuestions || [], longQuestions: longQuestions || [], totalMarks, status: finalStatus });
+    } else {
+      return res.status(400).json({ message: "Invalid quiz type" });
     }
-    return res.status(400).json({ message: "Invalid quiz type" });
+
+    // 🔥 REAL-TIME UPDATE ENGINE: Broadcast to course room if exam is pushed live instantly
+    if (finalStatus === "live" && req.io) {
+      req.io.to(courseId.toString()).emit("new_notification", {
+        title: "New Exam Released! 📝",
+        message: `An examination titled "${title}" has been authorized and is now active for submission.`,
+        type: "quiz",
+        courseId: courseId
+      });
+    }
+
+    return res.status(201).json({ message: "Quiz configured successfully", quiz });
   } catch (error) {
     return res.status(500).json({ message: "Failed to create quiz", error: error.message });
   }
@@ -39,7 +52,7 @@ exports.createQuiz = async (req, res) => {
 exports.generateQuestionQuizPDF = async (req, res) => {
   try {
     const { courseId, title } = req.query;
-    const quiz = await Quiz.findById(req.params.id).populate("course", "title");
+    const quiz = await Quiz.findById(req.params.id).populate("course", "title").lean();
     if (!quiz) return res.status(404).json({ message: "Quiz not found" });
 
     const pdfData = { title: title || quiz.title, shortQuestions: quiz.shortQuestions || [], longQuestions: quiz.longQuestions || [], totalMarks: quiz.totalMarks || 0, grandTotalMarks: quiz.totalMarks || 0 };
@@ -58,16 +71,16 @@ exports.getAllQuizzes = async (req, res) => {
   try {
     let quizzes = [];
     if (req.user.role === "teacher") {
-      const data = await Quiz.find({ teacher: req.user._id }).populate("course", "title");
-      quizzes = data.map(q => ({ ...q.toObject(), isCompleted: false, score: null, total: (q.questions || []).length, answers: [] }));
+      const data = await Quiz.find({ teacher: req.user._id }).populate("course", "title").lean();
+      quizzes = data.map(q => ({ ...q, isCompleted: false, score: null, total: (q.questions || []).length, answers: [] }));
     }
     if (req.user.role === "student") {
-      const courses = await Course.find({ "students.user": req.user._id }).select("_id");
+      const courses = await Course.find({ "students.user": req.user._id }).select("_id").lean();
       const courseIds = courses.map(c => c._id);
       if (courseIds.length === 0) return res.status(200).json({ quizzes: [] });
 
-      const quizzesData = await Quiz.find({ course: { $in: courseIds } }).populate("course", "title").populate("teacher", "name");
-      const attempts = await Attempt.find({ student: req.user._id, quiz: { $in: quizzesData.map(q => q._id) } });
+      const quizzesData = await Quiz.find({ course: { $in: courseIds }, status: "live" }).populate("course", "title").populate("teacher", "name").lean();
+      const attempts = await Attempt.find({ student: req.user._id, quiz: { $in: quizzesData.map(q => q._id) } }).lean();
 
       const attemptMap = {};
       attempts.forEach(a => { attemptMap[a.quiz.toString()] = a; });
@@ -75,7 +88,7 @@ exports.getAllQuizzes = async (req, res) => {
       quizzes = quizzesData.map(q => {
         const attempt = attemptMap[q._id.toString()];
         return {
-          ...q.toObject(),
+          ...q,
           isCompleted: !!attempt,
           score: attempt ? attempt.score : null,
           totalMarks: attempt ? attempt.total : q.totalMarks,
@@ -83,10 +96,8 @@ exports.getAllQuizzes = async (req, res) => {
           evaluatedByAI: attempt?.evaluatedByAI || false,
           title: q.title,
           total: q.type === "mcq" ? (q.questions || []).length : ((q.shortQuestions?.length || 0) + (q.longQuestions?.length || 0)),
-          answers: attempt ? attempt.answers.map(ans => ({
-            ...ans.toObject(),
-            scannedImageUrl: ans.scannedImage ? `${req.protocol}://${req.get("host")}/uploads/${ans.scannedImage}` : null,
-            aiFeedback: ans.aiFeedback || ""
+          answers: attempt ? (attempt.answers || []).map(ans => ({
+            ...ans, scannedImageUrl: ans.scannedImage ? `${req.protocol}://${req.get("host")}/uploads/${ans.scannedImage}` : null, aiFeedback: ans.aiFeedback || ""
           })) : [],
         };
       });
@@ -101,9 +112,9 @@ exports.getQuizzesByCourse = async (req, res) => {
   try {
     let quizzes;
     if (req.user.role === "teacher") {
-      quizzes = await Quiz.find({ course: req.params.courseId, teacher: req.user._id });
+      quizzes = await Quiz.find({ course: req.params.courseId, teacher: req.user._id }).lean();
     } else {
-      quizzes = await Quiz.find({ course: req.params.courseId }).populate("teacher", "name email");
+      quizzes = await Quiz.find({ course: req.params.courseId, status: "live" }).populate("teacher", "name email").lean();
     }
     res.json({ quizzes });
   } catch (error) {
@@ -114,10 +125,10 @@ exports.getQuizzesByCourse = async (req, res) => {
 exports.getQuizResults = async (req, res) => {
   try {
     const quizId = req.params.quizId;
-    const quiz = await Quiz.findOne({ _id: quizId, teacher: req.user._id }).populate("course", "title");
+    const quiz = await Quiz.findOne({ _id: quizId, teacher: req.user._id }).populate("course", "title").lean();
     if (!quiz) return res.status(404).json({ message: "Quiz not found" });
 
-    const attempts = await Attempt.find({ quiz: quizId }).populate("student", "name email");
+    const attempts = await Attempt.find({ quiz: quizId }).populate("student", "name email").lean();
 
     const results = attempts.map((a) => {
       const evaluatedByAI = a.evaluatedByAI || false;
@@ -183,9 +194,6 @@ exports.attemptQuiz = async (req, res) => {
   }
 };
 
-// ==============================================================
-// 🔥 UPDATED: SMART CASCADE DELETE FOR QUIZZES
-// ==============================================================
 exports.deleteQuiz = async (req, res) => {
   try {
     const quizId = req.params.id;
@@ -193,8 +201,6 @@ exports.deleteQuiz = async (req, res) => {
     if (!quiz) return res.status(404).json({ message: "Quiz not found" });
 
     await Attempt.deleteMany({ quiz: quizId });
-    console.log(`🗑️ Deleted all attempts associated with Quiz: ${quizId}`);
-
     await quiz.deleteOne();
     res.json({ message: "Quiz and all associated student attempts deleted successfully" });
   } catch (error) {
@@ -212,21 +218,33 @@ exports.updateQuiz = async (req, res) => {
     if (req.body.shortQuestions) quiz.shortQuestions = req.body.shortQuestions;
     if (req.body.longQuestions) quiz.longQuestions = req.body.longQuestions;
 
+    if (req.body.openDateTime) {
+      quiz.status = req.body.openDateTime === "draft" ? "draft" : "live";
+    }
+
     let total = 0;
     if (quiz.type === "mcq") total = (quiz.questions || []).reduce((sum, q) => sum + (q.marks || 1), 0);
     else total += (quiz.shortQuestions || []).reduce((sum, q) => sum + (q.marks || 0), 0) + (quiz.longQuestions || []).reduce((sum, q) => sum + (q.marks || 0), 0);
 
     quiz.totalMarks = total;
     await quiz.save();
+
+    // 🔥 REAL-TIME UPDATE ENGINE: Broadcast state change context
+    if (req.io) {
+      req.io.to(quiz.course.toString()).emit("new_notification", {
+        title: quiz.status === "live" ? "Exam Released live! 📝" : "Exam Closed/Locked 🔒",
+        message: quiz.status === "live" ? `"${quiz.title}" has been authorized live.` : `"${quiz.title}" has been locked.`,
+        type: "quiz",
+        courseId: quiz.course
+      });
+    }
+
     res.json({ message: "Quiz updated successfully", quiz });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
 
-// =========================================================
-// 🔥 QUESTION-WISE AI VISION SCANNING WITH FEEDBACK
-// =========================================================
 exports.scanAIQuizMarks = async (req, res) => {
   try {
     const { courseId, studentId, quizId, questionIndex, questionText, maxMarks } = req.body;
@@ -254,7 +272,6 @@ exports.scanAIQuizMarks = async (req, res) => {
 
     let visionPrompt = "";
     if (qIndex >= 0) {
-      // 🔥 THE ULTIMATE STRICT BUT FAIR PROMPT FOR LLAMA/FREE MODELS
       visionPrompt = `You are an expert, fair, and highly accurate University Examiner evaluating scanned handwritten exam answers.
 Question you must check against: "${questionText}"
 Maximum Marks: ${maxQMarks}.
@@ -310,6 +327,16 @@ CRITICAL INSTRUCTION: Output STRICT JSON ONLY. No other text.
 
     for (const file of req.files) if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
 
+    // 🔥 REAL-TIME UPDATE ENGINE: Notify specific student that AI has graded their uploaded question sheet
+    if (req.io) {
+      req.io.to(courseId.toString()).emit("new_notification", {
+        title: "AI Auto-Grading Complete! 🤖",
+        message: `Your paper script for "${originalQuiz.title}" has been processed and graded by AI. Check your results dashboard context.`,
+        type: "result",
+        courseId: courseId
+      });
+    }
+
     return res.status(200).json({ message: "Question Scanned Successfully", score: attempt.score });
   } catch (error) {
     return res.status(500).json({ message: "Vision scan failed", error: error.message });
@@ -323,7 +350,7 @@ exports.updateManualMarks = async (req, res) => {
 
     if (manualScore === undefined) return res.status(400).json({ message: "Manual score is required" });
 
-    const attempt = await Attempt.findById(attemptId);
+    const attempt = await Attempt.findById(attemptId).populate("quiz");
     if (!attempt) return res.status(404).json({ message: "Attempt not found" });
 
     if (questionIndex !== undefined && attempt.answers[questionIndex]) {
@@ -333,6 +360,16 @@ exports.updateManualMarks = async (req, res) => {
       attempt.score = Number(manualScore);
     }
     await attempt.save();
+
+    // 🔥 REAL-TIME UPDATE ENGINE: Notify student of manual verification score updates
+    if (req.io && attempt.quiz) {
+      req.io.to(attempt.quiz.course.toString()).emit("new_notification", {
+        title: "Marks Verified by Teacher 👨‍🏫",
+        message: `Instructor has updated/verified evaluation marks for your exam context submission.`,
+        type: "result",
+        courseId: attempt.quiz.course
+      });
+    }
 
     return res.status(200).json({ message: "Marks updated successfully!", score: attempt.score });
   } catch (error) {

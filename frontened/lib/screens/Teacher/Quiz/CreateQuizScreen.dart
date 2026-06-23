@@ -80,13 +80,15 @@ class _TeacherCreateQuizScreenState extends State<TeacherCreateQuizScreen> {
               const Text("Step 2: Choose Generation Engine", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 20),
 
-              // 🔥 PREMIUM WAVE BUTTONS FOR EACH OPTION
+              // 🔥 MANUAL CREATION ROUTE
               _WaveButton(
                 title: "Create Manually",
                 icon: Icons.edit_note,
                 colors: const [Color(0xFF4F46E5), Color(0xFF7C3AED)],
-                // 🔥 FIX: Changed to TeacherManualQuizScreen matching your class name
-                onTap: () => _navigateIfValid(TeacherManualQuizScreen(courseId: widget.courseId, quizTitle: _titleController.text.trim())),
+                onTap: () => _navigateIfValid(TeacherManualQuizScreen(
+                    courseId: widget.courseId,
+                    quizTitle: _titleController.text.trim()
+                )),
               ),
               const SizedBox(height: 20),
               _WaveButton(
@@ -110,9 +112,6 @@ class _TeacherCreateQuizScreenState extends State<TeacherCreateQuizScreen> {
   }
 }
 
-// ==========================================
-// DYNAMIC REUSABLE WAVE BUTTON
-// ==========================================
 class _WaveButton extends StatefulWidget {
   final String title;
   final IconData icon;
@@ -156,7 +155,10 @@ class _WaveButtonState extends State<_WaveButton> with SingleTickerProviderState
                   opacity: 1.0 - _controller.value,
                   child: Container(
                     width: double.infinity, height: 65,
-                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), color: widget.colors.first.withValues(alpha: 0.4)),
+                    decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        color: widget.colors.first.withAlpha((0.4 * 255).toInt())
+                    ),
                   ),
                 ),
               ),

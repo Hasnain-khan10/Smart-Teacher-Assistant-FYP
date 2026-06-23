@@ -41,6 +41,16 @@ exports.generatePlan = async (req, res) => {
       semesterDuration: semesterDuration || 18,
     });
 
+    // 🔥 REAL-TIME UPDATE ALERTS: Notify students enrolled in this specific course
+    if (req.io) {
+      req.io.to(courseId.toString()).emit("new_notification", {
+        title: "New Week Plan Available 📚",
+        message: `Instructor ${req.user.name || "Teacher"} has published the weekly academic roadmap for ${course.title}.`,
+        type: "plan",
+        courseId: courseId
+      });
+    }
+
     return res.status(201).json({ success: true, message: "Week plan created successfully", plan });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
@@ -105,7 +115,6 @@ exports.generateWeekPDF = async (req, res) => {
     doc.moveDown();
     doc.fontSize(12);
 
-    // 🔥 Naye Smart Fields Print Karne Ka Logic
     if (week.definition && week.definition !== "Pending" && week.definition.trim() !== "") {
       doc.font('Helvetica-Bold').text("Definition: ", { continued: true }).font('Helvetica').text(week.definition);
       doc.moveDown(0.5);
@@ -133,7 +142,6 @@ exports.generateWeekPDF = async (req, res) => {
       doc.font('Helvetica').moveDown(0.5);
     }
 
-    // Purane fields ka Fallback (agar manually banaya gaya ho)
     if (week.topics && week.topics.length > 0) {
       doc.font('Helvetica-Bold').text("Topics:"); doc.font('Helvetica');
       week.topics.forEach((t) => doc.text(`• ${t}`, { indent: 20 }));
@@ -240,6 +248,17 @@ RETURN EXACTLY IN THIS JSON FORMAT:
     };
 
     await plan.save();
+
+    // 🔥 REAL-TIME UPDATE ALERTS: Push socket event for AI topic evolution modification context
+    if (req.io) {
+      req.io.to(courseId.toString()).emit("new_notification", {
+        title: "Week Plan Material Evolved! ⚡",
+        message: `Topic configurations for Week ${weekNumber} have been dynamically enhanced by AI engine optimization layout.`,
+        type: "plan",
+        courseId: courseId
+      });
+    }
+
     return res.json({ success: true, message: "Week updated using AI", week: plan.weeks[weekIndex] });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
@@ -325,7 +344,6 @@ exports.downloadAIPlanPDF = async (req, res) => {
       doc.moveDown(0.5);
       doc.fontSize(12);
 
-      // 🔥 Naye Smart Fields Print Karne Ka Logic
       if (week.definition && week.definition !== "Pending" && week.definition.trim() !== "") {
         doc.font('Helvetica-Bold').text("Definition: ", { continued: true }).font('Helvetica').text(week.definition);
         doc.moveDown(0.3);
@@ -353,7 +371,6 @@ exports.downloadAIPlanPDF = async (req, res) => {
         doc.font('Helvetica').moveDown(0.3);
       }
 
-      // Purane Fallback fields
       if (week.topics && week.topics.length > 0) {
         doc.font('Helvetica-Bold').text("Topics & Sub-topics:"); doc.font('Helvetica');
         week.topics.forEach((t) => doc.text(`• ${t}`, { indent: 20 }));
