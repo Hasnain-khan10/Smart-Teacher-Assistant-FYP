@@ -39,14 +39,13 @@ class QuizProvider with ChangeNotifier {
 
   void clearError() { _error = null; notifyListeners(); }
 
-  // 🔥 UPDATED: Added questionIndex
-  Future<bool> updateManualMarks({required String attemptId, required int manualScore, required String quizId, int? questionIndex}) async {
+  Future<bool> updateManualMarks({required String attemptId, required int manualScore, int? questionIndex}) async {
     _isUpdatingManualScore = true;
     _error = null;
     notifyListeners();
     try {
       final success = await _quizService.updateManualMarks(attemptId: attemptId, manualScore: manualScore, questionIndex: questionIndex);
-      return success; // Notice: Refreshes are now handled in the Screen directly to prevent UI blinking
+      return success;
     } catch (e) {
       _error = e.toString().replaceAll("Exception:", "").trim();
       return false;
@@ -81,10 +80,19 @@ class QuizProvider with ChangeNotifier {
     finally { _isLoading = false; notifyListeners(); }
   }
 
-  Future<bool> createQuiz({required String courseId, required String title, required String type, List<Map<String, dynamic>>? questions, List<Map<String, dynamic>>? shortQuestions, List<Map<String, dynamic>>? longQuestions,}) async {
+  // 🔥 FIX 1: Added openDateTime & deadlineDateTime parameters
+  Future<bool> createQuiz({
+    required String courseId, required String title, required String type,
+    List<Map<String, dynamic>>? questions, List<Map<String, dynamic>>? shortQuestions, List<Map<String, dynamic>>? longQuestions,
+    String? openDateTime, String? deadlineDateTime,
+  }) async {
     _isCreating = true; _error = null; notifyListeners();
     try {
-      final success = await _quizService.createQuiz(courseId: courseId, title: title, type: type, questions: questions, shortQuestions: shortQuestions, longQuestions: longQuestions);
+      final success = await _quizService.createQuiz(
+        courseId: courseId, title: title, type: type,
+        questions: questions, shortQuestions: shortQuestions, longQuestions: longQuestions,
+        openDateTime: openDateTime, deadlineDateTime: deadlineDateTime, // Forwarding to service
+      );
       if (success) await fetchQuizzes(courseId); return success;
     } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return false; }
     finally { _isCreating = false; notifyListeners(); }
@@ -100,7 +108,6 @@ class QuizProvider with ChangeNotifier {
     finally { _isAttempting = false; notifyListeners(); }
   }
 
-  // 🔥 UPDATED: Added Question-Wise properties
   Future<Map<String, dynamic>?> scanAIQuizMarks({
     String? courseId, String? studentId, String? title, String? quizId, List<File>? files, dynamic arg1,
     int? questionIndex, String? questionText, int? maxMarks
@@ -134,10 +141,19 @@ class QuizProvider with ChangeNotifier {
     finally { _isDeleting = false; notifyListeners(); }
   }
 
-  Future<Map<String, dynamic>?> createAIMCQQuiz({required String courseId, required String prompt, required String difficulty, required int questionCount, required int marksPerQuestion, File? file}) async {
+  // 🔥 FIX 2: Added openDateTime & deadlineDateTime parameters
+  Future<Map<String, dynamic>?> createAIMCQQuiz({
+    required String courseId, required String prompt, required String difficulty,
+    required int questionCount, required int marksPerQuestion, File? file,
+    String? openDateTime, String? deadlineDateTime,
+  }) async {
     _isGeneratingAI = true; _error = null; notifyListeners();
     try {
-      final result = await _quizService.createAIMCQQuiz(courseId: courseId, prompt: prompt, difficulty: difficulty, questionCount: questionCount, marksPerQuestion: marksPerQuestion, file: file);
+      final result = await _quizService.createAIMCQQuiz(
+        courseId: courseId, prompt: prompt, difficulty: difficulty,
+        questionCount: questionCount, marksPerQuestion: marksPerQuestion, file: file,
+        openDateTime: openDateTime, deadlineDateTime: deadlineDateTime, // Forwarding to service
+      );
       await fetchQuizzes(courseId); return result;
     } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return null; }
     finally { _isGeneratingAI = false; notifyListeners(); }

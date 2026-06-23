@@ -30,15 +30,17 @@ class _CoursesScreenState extends State<CoursesScreen> {
       appBar: AppBar(
         elevation: 0,
         backgroundColor: const Color(0xFF4F46E5),
-        automaticallyImplyLeading: false, // Hidden because it's in Bottom Nav
+        automaticallyImplyLeading: false,
         title: const Text("My Learning", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         centerTitle: true,
       ),
       body: Consumer<CourseProvider>(
         builder: (context, provider, child) {
           final courses = provider.courses.toList()..sort((a, b) => b.id.compareTo(a.id));
-          final activeCourses = courses.where((c) => c.progress < 1.0).toList();
-          final completedCourses = courses.where((c) => c.progress >= 1.0).toList();
+
+          // 🔥 100% threshold fix kiya gaya hai (Progress is out of 100 now)
+          final activeCourses = courses.where((c) => c.progress < 100.0).toList();
+          final completedCourses = courses.where((c) => c.progress >= 100.0).toList();
 
           if (provider.isLoading) return const Center(child: CircularProgressIndicator());
 
@@ -51,12 +53,12 @@ class _CoursesScreenState extends State<CoursesScreen> {
                 const Text("Active Courses", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
                 const SizedBox(height: 16),
                 if (activeCourses.isEmpty)
-                  _EmptyState(icon: Icons.menu_book, message: "No active courses found.")
+                  const _EmptyState(icon: Icons.menu_book, message: "No active courses found.")
                 else
                   ...activeCourses.map((course) => _CourseCard(
                     title: course.title,
                     instructor: course.teacherName ?? "Instructor",
-                    progress: (course.progress / 100).clamp(0.0, 1.0),
+                    progress: (course.progress / 100).clamp(0.0, 1.0), // Fixed to pass 0.0 to 1.0
                     onTap: () => Navigator.pushNamed(context, '/course-detail', arguments: course),
                   )),
 
@@ -65,7 +67,7 @@ class _CoursesScreenState extends State<CoursesScreen> {
                 const Text("Completed Courses", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
                 const SizedBox(height: 16),
                 if (completedCourses.isEmpty)
-                  _EmptyState(icon: Icons.workspace_premium, message: "You haven't completed any course yet.")
+                  const _EmptyState(icon: Icons.workspace_premium, message: "You haven't completed any course yet.")
                 else
                   ...completedCourses.map((course) => _CourseCard(
                     title: course.title,

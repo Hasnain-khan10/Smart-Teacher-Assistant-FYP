@@ -38,7 +38,6 @@ class QuizService {
     throw Exception(data['message'] ?? "Failed to fetch results");
   }
 
-  // 🔥 UPDATED: Now supports Question-wise manual editing
   Future<bool> updateManualMarks({required String attemptId, required int manualScore, int? questionIndex}) async {
     final response = await http.put(
       Uri.parse("${Api.baseUrl}/quizzes/manual-score/$attemptId"),
@@ -48,9 +47,11 @@ class QuizService {
     return response.statusCode == 200;
   }
 
+  // 🔥 UPDATED: Added openDateTime & deadlineDateTime for scheduling
   Future<bool> createQuiz({
     required String courseId, required String title, required String type,
-    List? questions, List? shortQuestions, List? longQuestions
+    List? questions, List? shortQuestions, List? longQuestions,
+    String? openDateTime, String? deadlineDateTime,
   }) async {
     int total = 0;
     if (questions != null) for(var q in questions) total += (int.tryParse(q['marks'].toString()) ?? 1);
@@ -63,7 +64,9 @@ class QuizService {
         body: jsonEncode({
           "course": courseId, "title": title, "type": type,
           "questions": questions ?? [], "shortQuestions": shortQuestions ?? [], "longQuestions": longQuestions ?? [],
-          "totalMarks": total
+          "totalMarks": total,
+          "openDateTime": openDateTime,
+          "deadlineDateTime": deadlineDateTime,
         })
     );
     return response.statusCode == 201 || response.statusCode == 200;
@@ -76,7 +79,6 @@ class QuizService {
     throw Exception(data['message'] ?? "Failed to submit attempt");
   }
 
-  // 🔥 UPDATED: Question-Wise Scan support parameters added
   Future<Map<String, dynamic>> scanAIQuizMarks({
     required String courseId, required String studentId, required String title, required String quizId,
     required List<File> files, int? questionIndex, String? questionText, int? maxMarks
@@ -90,9 +92,7 @@ class QuizService {
     if (questionText != null) request.fields['questionText'] = questionText;
     if (maxMarks != null) request.fields['maxMarks'] = maxMarks.toString();
 
-    for (var file in files) {
-      request.files.add(await http.MultipartFile.fromPath('files', file.path));
-    }
+    for (var file in files) request.files.add(await http.MultipartFile.fromPath('files', file.path));
     final streamedResponse = await request.send();
     final response = await http.Response.fromStream(streamedResponse);
     if (response.statusCode != 200) throw Exception("Backend Error (${response.statusCode}): ${response.body}");
@@ -127,11 +127,18 @@ class QuizService {
     return null;
   }
 
-  Future<Map<String, dynamic>> createAIMCQQuiz({required String courseId, required String prompt, required String difficulty, required int questionCount, required int marksPerQuestion, File? file}) async {
+  // 🔥 UPDATED: Added openDateTime & deadlineDateTime for scheduling
+  Future<Map<String, dynamic>> createAIMCQQuiz({
+    required String courseId, required String prompt, required String difficulty,
+    required int questionCount, required int marksPerQuestion, File? file,
+    String? openDateTime, String? deadlineDateTime,
+  }) async {
     final url = Uri.parse("${Api.baseUrl}/ai/quizzes/mcq");
     if (file != null && file.path.isNotEmpty) {
       final req = http.MultipartRequest("POST", url)..headers.addAll(await _multipartHeaders());
       req.fields.addAll({"courseId": courseId, "course": courseId, "topic": prompt, "prompt": prompt, "difficulty": difficulty, "questionCount": questionCount.toString(), "marksPerQuestion": marksPerQuestion.toString()});
+      if(openDateTime != null) req.fields['openDateTime'] = openDateTime;
+      if(deadlineDateTime != null) req.fields['deadlineDateTime'] = deadlineDateTime;
       req.files.add(await http.MultipartFile.fromPath("book", file.path));
       final streamedResponse = await req.send().timeout(const Duration(seconds: 90));
       final res = await http.Response.fromStream(streamedResponse);
@@ -139,7 +146,10 @@ class QuizService {
       if (res.statusCode == 200 && data['success'] == true) return data;
       throw Exception(data['message'] ?? "AI Generation Failed");
     } else {
-      final res = await http.post(url, headers: await _headers(), body: jsonEncode({"courseId": courseId, "course": courseId, "topic": prompt, "prompt": prompt, "difficulty": difficulty, "questionCount": questionCount, "marksPerQuestion": marksPerQuestion})).timeout(const Duration(seconds: 90));
+      final res = await http.post(url, headers: await _headers(), body: jsonEncode({
+        "courseId": courseId, "course": courseId, "topic": prompt, "prompt": prompt, "difficulty": difficulty, "questionCount": questionCount, "marksPerQuestion": marksPerQuestion,
+        "openDateTime": openDateTime, "deadlineDateTime": deadlineDateTime,
+      })).timeout(const Duration(seconds: 90));
       final data = jsonDecode(res.body);
       if (res.statusCode == 200 && data['success'] == true) return data;
       throw Exception(data['message'] ?? "AI Generation Failed");

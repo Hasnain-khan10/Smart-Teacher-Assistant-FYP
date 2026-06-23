@@ -46,7 +46,7 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
     context.read<QuizProvider>().fetchQuizResults(widget.quizId, quizId: widget.quizId);
   }
 
-  // 🔥 UPDATED: Added isResultView flag to differentiate between Tabs
+  // 🔥 FIXED: Removing incompatible parameters (courseId, studentId, etc.) and aligning with TeacherQuizEvaluationScreen signature.
   void _openStudentEvaluation(String studentId, String studentName, List results, {required bool isResultView}) {
     final attempt = results.firstWhere((r) => r["studentId"] == studentId, orElse: () => null);
 
@@ -54,17 +54,9 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
       context,
       MaterialPageRoute(
         builder: (_) => TeacherQuizEvaluationScreen(
-          attemptId: attempt != null ? attempt["attemptId"] : "",
+          // Ensure valid fallback to prevent crashing if attempt is unexpectedly null
+          attemptId: attempt != null ? attempt["attemptId"].toString() : "",
           quizId: widget.quizId,
-          courseId: widget.courseId,
-          studentId: studentId,
-          studentName: studentName,
-          quizType: widget.quizType,
-          score: attempt != null ? attempt["score"] : 0,
-          totalMarks: widget.totalMarks,
-          detailedAnswers: attempt != null ? attempt["detailedAnswers"] : [],
-          scannedPaperUrls: attempt != null ? List<String>.from(attempt["scannedPaperUrls"] ?? []) : [],
-          isResultView: isResultView, // 🔥 Pass flag to next screen
         ),
       ),
     ).then((_) => _refreshData());
@@ -213,7 +205,6 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
         final evaluatedByAI = r["evaluatedByAI"] ?? false;
 
         return GestureDetector(
-          // 🔥 Teacher is viewing results, so isResultView is TRUE
           onTap: () => _openStudentEvaluation(studentId, name, results, isResultView: true),
           child: Container(
             margin: const EdgeInsets.only(bottom: 12),
@@ -288,7 +279,6 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
                 ),
               ),
               ElevatedButton.icon(
-                // 🔥 Teacher wants to scan, so isResultView is FALSE
                 onPressed: () => _openStudentEvaluation(studentId, studentName, results, isResultView: false),
                 icon: const Icon(Icons.open_in_new, size: 16, color: Colors.white),
                 label: const Text("Open", style: TextStyle(color: Colors.white)),

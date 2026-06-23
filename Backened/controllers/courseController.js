@@ -273,7 +273,7 @@ exports.getCourseById = async (req, res) => {
         _id: req.params.id,
         teacher: req.user._id,
       });
-    } 
+    }
     else {
       course = await Course.findById(req.params.id)
         .populate("teacher", "name email");

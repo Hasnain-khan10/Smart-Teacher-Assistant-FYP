@@ -1,11 +1,18 @@
+import 'dart:async'; // 🔥 Added for Live Timer
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:frontened/screens/Student/Courses/CoursesScreen.dart';
+import 'package:frontened/Provider/auth_provider.dart';
+import 'package:frontened/Provider/course_provider.dart';
+import 'package:frontened/Provider/quiz_provider.dart';
+import 'package:frontened/models/Quiz/quiz_model.dart'; // 🔥 Required for Quiz Model
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:frontened/screens/Student/Courses/JoinCourseScreen.dart';
 import 'package:frontened/screens/Student/Profile/ProfileScreen.dart';
-import 'package:frontened/screens/Student/Quizzes/QuizzesScreen.dart';
-import 'package:frontened/screens/Student/student_home_screen.dart';
 
 class MainScreen extends StatefulWidget {
   static const String routeName = '/student-placeholder';
+
   const MainScreen({super.key});
 
   @override
@@ -13,99 +20,400 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int currentIndex = 0;
+  List<Map<String, String>> _deletedCourseAlerts = [];
 
-  final List<Widget> screens = const [
-    StudentHomeScreen(),
-    CoursesScreen(),
-    SizedBox.shrink(), // Dummy placeholder for Assignments
-    StudentProfileScreen(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
 
-  // 🔥 Future Work / Coming Soon Dialog Popup Function
-  void _showComingSoonDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.lock_clock_rounded, color: Color(0xFF4F46E5)),
-            SizedBox(width: 10),
-            Text("Future Work", style: TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("📚 Smart Assignment Manager", style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
-            SizedBox(height: 6),
-            Text("This feature is currently under development. In the next release, students can upload and evaluate handwritten assignments directly via AI scanning.", style: TextStyle(color: Colors.grey, fontSize: 13)),
-            SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Text("Coming Soon...", style: TextStyle(fontStyle: FontStyle.italic, fontWeight: FontWeight.bold, color: Color(0xFF16A34A))),
-            )
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Got it!", style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF4F46E5))),
-          )
-        ],
-      ),
-    );
+  Future<void> _loadData() async {
+    await Future.wait([
+      context.read<QuizProvider>().fetchAllQuizzes(),
+      context.read<CourseProvider>().fetchCourses(),
+      context.read<AuthProvider>().loadProfile(),
+    ]);
+
+    if (mounted) {
+      final courseProvider = context.read<CourseProvider>();
+      if (courseProvider.error == null) {
+        await _syncCacheAndFindDeleted(courseProvider.courses);
+      }
+    }
+  }
+
+  Future<void> _syncCacheAndFindDeleted(List<dynamic> currentCourses) async {
+    final authProvider = context.read<AuthProvider>();
+    final String studentId = authProvider.user?.id ?? "fallback_id";
+    final String cacheKey = 'smart_cache_courses_v3_$studentId';
+
+    final prefs = await SharedPreferences.getInstance();
+    final String? cachedData = prefs.getString(cacheKey);
+
+    List<Map<String, dynamic>> previousCourses = [];
+    if (cachedData != null) {
+      try {
+        List<dynamic> decoded = jsonDecode(cachedData);
+        previousCourses = decoded.map((e) => Map<String, dynamic>.from(e)).toList();
+      } catch (e) {
+        previousCourses = [];
+      }
+    }
+
+    List<String> currentCourseIds = currentCourses.map((c) => c.id.toString()).toList();
+    List<Map<String, String>> newlyDeleted = [];
+
+    for (var prev in previousCourses) {
+      String prevId = prev['id'].toString();
+      String prevTitle = prev['title'].toString();
+      String isDeleted = prev['isDeleted'].toString();
+
+      if (!currentCourseIds.contains(prevId) && isDeleted != "true") {
+        newlyDeleted.add({"id": prevId, "title": prevTitle, "isDeleted": "true"});
+      } else if (isDeleted == "true") {
+        newlyDeleted.add({"id": prevId, "title": prevTitle, "isDeleted": "true"});
+      }
+    }
+
+    setState(() {
+      _deletedCourseAlerts = newlyDeleted;
+    });
+
+    List<Map<String, dynamic>> newCache = currentCourses.map((c) => {
+      "id": c.id.toString(),
+      "title": c.title.toString(),
+      "isDeleted": "false"
+    }).toList();
+
+    newCache.addAll(newlyDeleted);
+    await prefs.setString(cacheKey, jsonEncode(newCache));
+  }
+
+  Future<void> _dismissDeletedCard(String courseId) async {
+    setState(() {
+      _deletedCourseAlerts.removeWhere((c) => c['id'] == courseId);
+    });
+
+    final authProvider = context.read<AuthProvider>();
+    final String studentId = authProvider.user?.id ?? "fallback_id";
+    final String cacheKey = 'smart_cache_courses_v3_$studentId';
+
+    final prefs = await SharedPreferences.getInstance();
+    final String? cachedData = prefs.getString(cacheKey);
+
+    if (cachedData != null) {
+      List<dynamic> cacheList = jsonDecode(cachedData);
+      cacheList.removeWhere((c) => c['id'].toString() == courseId);
+      await prefs.setString(cacheKey, jsonEncode(cacheList));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final quizProvider = context.watch<QuizProvider>();
+    final authProvider = context.watch<AuthProvider>();
+    final student = authProvider.user;
+    final courseProvider = context.watch<CourseProvider>();
+    final courses = courseProvider.courses;
+
+    final pendingQuizzes = quizProvider.quizzes.where((q) => q.isCompleted != true).toList();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      body: IndexedStack(
-        index: currentIndex,
-        children: screens,
+      floatingActionButton: _AnimatedWaveButton(
+        onTap: () => Navigator.pushNamed(context, JoinCourseScreen.routeName).then((_) => _loadData()),
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, -5)),
-          ],
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8),
-            child: BottomNavigationBar(
-              elevation: 0,
-              backgroundColor: Colors.transparent,
-              currentIndex: currentIndex,
-              // 🔥 Yahan Check Lagaya Hai: Agar Index 2 (Assignments) ho to Screen change nahi hogi, Popup aayega!
-              onTap: (index) {
-                if (index == 2) {
-                  _showComingSoonDialog(context);
-                } else {
-                  setState(() => currentIndex = index);
-                }
-              },
-              type: BottomNavigationBarType.fixed,
-              selectedItemColor: const Color(0xFF4F46E5),
-              unselectedItemColor: Colors.grey.shade400,
-              selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
-              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11),
-              items: const [
-                BottomNavigationBarItem(icon: Icon(Icons.home_rounded), activeIcon: Icon(Icons.home_rounded, size: 28), label: 'Home'),
-                // 🔥 Icon aur Text Update kar diya
-                BottomNavigationBarItem(icon: Icon(Icons.auto_stories_rounded), activeIcon: Icon(Icons.auto_stories_rounded, size: 28), label: 'Class & Quizzes'),
-                // 🔥 Quizzes ko Assignments bana diya
-                BottomNavigationBarItem(icon: Icon(Icons.assignment_turned_in_rounded), activeIcon: Icon(Icons.assignment_turned_in_rounded, size: 28), label: 'Assignments'),
-                BottomNavigationBarItem(icon: Icon(Icons.person_rounded), activeIcon: Icon(Icons.person_rounded, size: 28), label: 'Profile'),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _loadData,
+          color: const Color(0xFF4F46E5),
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StudentProfileScreen())),
+                      child: CircleAvatar(
+                        radius: 25,
+                        backgroundColor: const Color(0xFF4F46E5).withAlpha(40),
+                        backgroundImage: (student != null && student.profileImage != null && student.profileImage!.isNotEmpty)
+                            ? NetworkImage(student.profileImage!)
+                            : null,
+                        child: (student == null || student.profileImage == null || student.profileImage!.isEmpty)
+                            ? const Icon(Icons.person, color: Color(0xFF4F46E5))
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Hello, ${student?.name ?? 'Student'} 👋", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
+                          const Text("Student Dashboard", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 30),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text("Enrolled Courses", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
+                    Text("${courses.length} Active", style: const TextStyle(color: Color(0xFF16A34A), fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 15),
+
+                ..._deletedCourseAlerts.map((delCourse) => Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.red.shade300, width: 1.5), boxShadow: [BoxShadow(color: Colors.red.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4))]),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [Icon(Icons.warning_amber_rounded, color: Colors.red.shade700, size: 24), const SizedBox(width: 8), Expanded(child: Text("${delCourse['title']} (Removed)", style: TextStyle(color: Colors.red.shade900, fontWeight: FontWeight.bold, fontSize: 16)))],
+                      ),
+                      const SizedBox(height: 8),
+                      Text("The instructor has permanently deleted this subject.", style: TextStyle(color: Colors.red.shade700, fontSize: 13, height: 1.4)),
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade600, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))), onPressed: () => _dismissDeletedCard(delCourse['id']!), child: const Text("OK, Got it", style: TextStyle(fontWeight: FontWeight.bold))),
+                      )
+                    ],
+                  ),
+                )),
+
+                if (courseProvider.isLoading)
+                  const Center(child: CircularProgressIndicator())
+                else if (courses.isEmpty && _deletedCourseAlerts.isEmpty)
+                  const Center(child: Padding(padding: EdgeInsets.all(20), child: Text("No courses joined yet.", style: TextStyle(color: Colors.grey))))
+                else
+                  ...courses.map((course) => GestureDetector(
+                    onTap: () => Navigator.pushNamed(context, '/course-detail', arguments: course),
+                    child: Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(color: Colors.grey.shade200),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 5)],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(color: const Color(0xFF4F46E5).withAlpha(25), borderRadius: BorderRadius.circular(10)),
+                            child: const Icon(Icons.menu_book_rounded, color: Color(0xFF4F46E5)),
+                          ),
+                          const SizedBox(width: 15),
+                          Expanded(
+                            child: Text(
+                                course.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E1B4B))
+                            ),
+                          ),
+                          const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+                        ],
+                      ),
+                    ),
+                  )),
+
+                const SizedBox(height: 30),
+
+                const Text("Pending Quizzes", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
+                const SizedBox(height: 12),
+
+                if (quizProvider.isLoading)
+                  const Center(child: CircularProgressIndicator())
+                else if (pendingQuizzes.isEmpty)
+                  const Text("No pending quizzes. Great job!", style: TextStyle(color: Colors.grey))
+                else
+                // 🔥 REPLACED STATIC CARD WITH LIVE COUNTDOWN ENGINE
+                  ...pendingQuizzes.map((quiz) => LiveQuizCard(quiz: quiz)),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+// =======================================================
+// 🔥 LIVE COUNTDOWN QUIZ CARD ENGINE (MIT STANDARD)
+// =======================================================
+class LiveQuizCard extends StatefulWidget {
+  final Quiz quiz;
+  const LiveQuizCard({super.key, required this.quiz});
+
+  @override
+  State<LiveQuizCard> createState() => _LiveQuizCardState();
+}
+
+class _LiveQuizCardState extends State<LiveQuizCard> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    // 1 second ka ticking loop jo card ko live refresh karega
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  String _formatDuration(Duration d) {
+    int hours = d.inHours;
+    int minutes = d.inMinutes.remainder(60);
+    int seconds = d.inSeconds.remainder(60);
+
+    if (hours > 24) {
+      int days = d.inDays;
+      int remainingHours = hours.remainder(24);
+      return "${days}d ${remainingHours}h ${minutes}m";
+    }
+    return "${hours.toString().padLeft(2, '0')}h ${minutes.toString().padLeft(2, '0')}m ${seconds.toString().padLeft(2, '0')}s";
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    String timeText = "Active Now";
+    Color statusColor = Colors.green;
+    IconData statusIcon = Icons.play_circle_fill;
+    bool isClickable = true;
+
+    DateTime now = DateTime.now();
+
+    // Check backend timing dates securely
+    if (widget.quiz.openDateTime != null && widget.quiz.deadlineDateTime != null) {
+      DateTime openTime = widget.quiz.openDateTime!.toLocal();
+      DateTime closeTime = widget.quiz.deadlineDateTime!.toLocal();
+
+      if (now.isBefore(openTime)) {
+        // Test is scheduled for the future
+        Duration diff = openTime.difference(now);
+        timeText = "Starts in: ${_formatDuration(diff)}";
+        statusColor = Colors.orange;
+        statusIcon = Icons.lock_clock;
+        isClickable = false; // System locked
+      } else if (now.isBefore(closeTime)) {
+        // Test is live right now!
+        Duration diff = closeTime.difference(now);
+        timeText = "Closes in: ${_formatDuration(diff)}";
+        statusColor = Colors.green;
+        statusIcon = Icons.lock_open;
+        isClickable = true;
+      } else {
+        // Test time is gone
+        timeText = "Expired";
+        statusColor = Colors.red;
+        statusIcon = Icons.block;
+        isClickable = false; // Deadlock
+      }
+    } else {
+      // Fallback for old quizzes that have no dates set
+      timeText = "No exact deadline";
+      statusColor = Colors.green;
+      statusIcon = Icons.assignment;
+      isClickable = true;
+    }
+
+    return GestureDetector(
+      onTap: () {
+        if (isClickable) {
+          Navigator.pushNamed(context, '/quiz-attempt', arguments: widget.quiz);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(timeText == "Expired" ? "This exam's deadline has passed." : "Please wait! This exam has not started yet."),
+                backgroundColor: Colors.red,
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 2),
+              )
+          );
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 500),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: statusColor.withAlpha(15), // Light background hue based on status
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: statusColor.withAlpha(100), width: 1.5),
+        ),
+        child: Row(
+          children: [
+            Icon(statusIcon, color: statusColor, size: 24),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                      widget.quiz.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isClickable ? const Color(0xFF1E1B4B) : Colors.grey.shade700)
+                  ),
+                  const SizedBox(height: 6),
+                  Text(timeText, style: TextStyle(color: statusColor, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                ],
+              ),
+            ),
+            Icon(isClickable ? Icons.chevron_right : Icons.lock, color: isClickable ? statusColor : Colors.grey.shade400, size: 22),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnimatedWaveButton extends StatefulWidget {
+  final VoidCallback onTap;
+  const _AnimatedWaveButton({required this.onTap});
+  @override
+  State<_AnimatedWaveButton> createState() => _AnimatedWaveButtonState();
+}
+class _AnimatedWaveButtonState extends State<_AnimatedWaveButton> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  @override
+  void initState() { super.initState(); _controller = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(); }
+  @override
+  void dispose() { _controller.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: AnimatedBuilder(animation: _controller, builder: (context, child) {
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            Transform.scale(scale: 1.0 + (_controller.value * 0.4), child: Opacity(opacity: 1.0 - _controller.value, child: Container(width: 65, height: 65, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFF16A34A).withAlpha(128))))),
+            Container(width: 65, height: 65, decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFF16A34A), Color(0xFF22C55E)]), boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4))]), child: const Icon(Icons.add, color: Colors.white, size: 30))
+          ],
+        );
+      }),
     );
   }
 }

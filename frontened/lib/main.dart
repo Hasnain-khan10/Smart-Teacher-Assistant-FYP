@@ -1,15 +1,16 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:frontened/Provider/auth_provider.dart';
 import 'package:frontened/Provider/course_provider.dart';
 import 'package:frontened/Provider/pdf_provider.dart';
 import 'package:frontened/Provider/quiz_provider.dart';
 import 'package:frontened/Provider/week_plan_provider.dart';
-import 'package:frontened/firebase_options.dart';
 
 import 'package:frontened/screens/RoleSelectionScreen.dart';
 
-// 🔥 UNIFIED AUTH SCREENS
+// UNIFIED AUTH SCREENS
 import 'package:frontened/screens/Teacher/TeacherAuthScreen.dart';
 import 'package:frontened/screens/Student/Authentication/StudentAuthScreen.dart';
 
@@ -30,6 +31,17 @@ import 'package:frontened/screens/Teacher/TeacherPlaceholderScreen.dart';
 import 'package:frontened/services/storage_service.dart';
 import 'package:provider/provider.dart';
 
+// 🔥 BACKGROUND NOTIFICATION HANDLER
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  debugPrint("Handling a background message: ${message.messageId}");
+}
+
+// 🔥 NOTIFICATION CHANNELS INITIALIZATION
+late AndroidNotificationChannel channel;
+late FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin;
+
 String initialAppRoute = RoleSelectionScreen.routeName;
 
 void main() async {
@@ -38,6 +50,54 @@ void main() async {
   if (Firebase.apps.isEmpty) {
     await Firebase.initializeApp();
   }
+
+  // Set background messaging handler safely
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // Configure Local Notifications for Foreground Channels
+  flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+  channel = const AndroidNotificationChannel(
+    'smart_teacher_channel',
+    'High Importance Notifications',
+    description: 'This channel is used for academic alerts.',
+    importance: Importance.high,
+  );
+
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
+
+  // Request Notification Permissions from Device
+  await FirebaseMessaging.instance.requestPermission(
+    alert: true, badge: true, sound: true,
+  );
+
+  // Print device token for backend registration
+  String? fcmToken = await FirebaseMessaging.instance.getToken();
+  debugPrint("Device FCM Token: $fcmToken");
+
+  // Handle Foreground Messages
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    RemoteNotification? notification = message.notification;
+    AndroidNotification? android = message.notification?.android;
+    if (notification != null && android != null) {
+      // 🔥 FIXED PERMANENTLY: Named parameters correctly passed to prevent argument exception errors
+      flutterLocalNotificationsPlugin.show(
+        id: notification.hashCode,
+        title: notification.title,
+        body: notification.body,
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            channel.id,
+            channel.name,
+            channelDescription: channel.description,
+            icon: '@mipmap/ic_launcher',
+          ),
+        ),
+      );
+    }
+  });
 
   bool expired = await StorageService.isSessionExpired();
   if (expired) {
@@ -55,7 +115,6 @@ void main() async {
     }
   } else if (role != null && role.isNotEmpty) {
     if (role.toLowerCase() == "student") {
-      // 🔥 POINTING TO THE NEW STUDENT AUTH SCREEN
       initialAppRoute = StudentAuthScreen.routeName;
     } else if (role.toLowerCase() == "teacher") {
       initialAppRoute = TeacherAuthScreen.routeName;
@@ -88,7 +147,6 @@ class SmartTeacherAssistantApp extends StatelessWidget {
         routes: {
           RoleSelectionScreen.routeName: (_) => const RoleSelectionScreen(),
 
-          // 🔥 NEW UNIFIED AUTH SCREENS
           TeacherAuthScreen.routeName: (_) => const TeacherAuthScreen(),
           StudentAuthScreen.routeName: (_) => const StudentAuthScreen(),
 

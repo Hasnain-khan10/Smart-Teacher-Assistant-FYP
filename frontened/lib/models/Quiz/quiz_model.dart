@@ -8,14 +8,18 @@ class Quiz {
   final List<SubjectiveQuestion> shortQuestions;
   final List<SubjectiveQuestion> longQuestions;
   final bool isAIScanned;
-  final DateTime? createdAt; // 🔥 Added so sorting works safely
+  final DateTime? createdAt;
 
   final String? course;
   final bool isCompleted;
   final num? score;
   final List<dynamic>? selectedAnswers;
   final bool? evaluatedByAI;
-  final List<String>? scannedPaperUrls; // 🔥 Added for Teacher's Scans
+  final List<String>? scannedPaperUrls;
+
+  // 🔥 NEW MIT/CAMBRIDGE STANDARD SECURITIES FIELDS
+  final DateTime? openDateTime;
+  final DateTime? deadlineDateTime;
 
   Quiz({
     required this.id,
@@ -34,6 +38,8 @@ class Quiz {
     this.selectedAnswers,
     this.evaluatedByAI,
     this.scannedPaperUrls,
+    this.openDateTime,
+    this.deadlineDateTime,
   });
 
   factory Quiz.fromJson(Map<String, dynamic> json) {
@@ -45,17 +51,19 @@ class Quiz {
       totalMarks: json['totalMarks'] ?? 0,
       isAIScanned: json['isAIScanned'] ?? false,
       createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt']) : null,
-
       course: json['course'] is Map ? json['course']['_id'] : json['course'],
       isCompleted: json['isCompleted'] ?? false,
       score: json['score'],
       selectedAnswers: json['answers'] ?? json['selectedAnswers'],
       evaluatedByAI: json['evaluatedByAI'] ?? false,
 
-      // 🔥 Extracting Scanned papers safely for students
+      // 🔥 EXTRACITING TIME CRITERIA FROM BACKEND SECURELY
+      openDateTime: json['openDateTime'] != null ? DateTime.tryParse(json['openDateTime']) : null,
+      deadlineDateTime: json['deadlineDateTime'] != null ? DateTime.tryParse(json['deadlineDateTime']) : null,
+
       scannedPaperUrls: json['scannedPaper'] != null
           ? List<String>.from(json['scannedPaper'].map((file) => "https://smart-teacher-assistant-fyp.onrender.com/uploads/$file"))
-          : [], // IMPORTANT: Apni API baseUrl yahan adjust kar lena agar domain ho
+          : [],
 
       questions: (json['questions'] as List?)?.map((q) => McqQuestion.fromJson(q)).toList() ?? [],
       shortQuestions: (json['shortQuestions'] as List?)?.map((q) => SubjectiveQuestion.fromJson(q)).toList() ?? [],
