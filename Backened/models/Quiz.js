@@ -46,11 +46,13 @@ const quizSchema = new mongoose.Schema(
     marksPerQuestion: { type: Number, default: 1 },
     isAIScanned: { type: Boolean, default: false },
 
-    // 🔥 THE HUMAN SOLUTION: Simple Status Switch
-    status: {
-      type: String,
-      enum: ["draft", "live", "locked"],
-      default: "live"
+    // 🔥 AUTOMATED TIME-BASED LOCK/UNLOCK FIELDS
+    // Ye fields auto-handle karengi kab quiz show karna hai aur kab lock karna hai
+    openDateTime: {
+      type: Date,
+    },
+    deadlineDateTime: {
+      type: Date,
     },
   },
   { timestamps: true }

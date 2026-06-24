@@ -1,5 +1,6 @@
 const WeekPlan = require("../models/WeekPlan");
 const Course = require("../models/Course");
+const User = require("../models/User"); // 🔥 Required to get FCM Tokens for push alerts
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const pdfParse = require("pdf-parse");
@@ -41,14 +42,23 @@ exports.generatePlan = async (req, res) => {
       semesterDuration: semesterDuration || 18,
     });
 
-    // 🔥 REAL-TIME UPDATE ALERTS: Notify students enrolled in this specific course
-    if (req.io) {
-      req.io.to(courseId.toString()).emit("new_notification", {
-        title: "New Week Plan Available 📚",
-        message: `Instructor ${req.user.name || "Teacher"} has published the weekly academic roadmap for ${course.title}.`,
-        type: "plan",
-        courseId: courseId
-      });
+    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE: Notify students enrolled in this specific course
+    try {
+      const studentIds = course.students.map(s => s.user.toString());
+      if (studentIds.length > 0) {
+        const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
+        const fcmTokens = users.map(u => u.fcmToken).filter(token => token && token.trim() !== "");
+
+        req.sendUniversalNotification({
+          courseId: course._id,
+          title: "New Week Plan Available 📚",
+          message: `Instructor ${req.user.name || "Teacher"} has published the weekly academic roadmap for ${course.title}.`,
+          type: "plan",
+          fcmTokens: fcmTokens
+        });
+      }
+    } catch (notifyErr) {
+      console.log("Week Plan notification silently failed:", notifyErr.message);
     }
 
     return res.status(201).json({ success: true, message: "Week plan created successfully", plan });
@@ -200,6 +210,7 @@ exports.updateWeekAI = async (req, res) => {
     const { courseId, weekNumber, prompt } = req.body;
     if (!courseId || !weekNumber) return res.status(400).json({ success: false, message: "courseId and weekNumber required" });
 
+    const course = await Course.findById(courseId).lean();
     const plan = await WeekPlan.findOne({ course: courseId, teacher: req.user._id });
     if (!plan) return res.status(404).json({ success: false, message: "Week plan not found" });
 
@@ -232,6 +243,7 @@ RETURN EXACTLY IN THIS JSON FORMAT:
 
     let aiResponse = await callAI({ prompt: aiPrompt });
     if (typeof aiResponse === "string") {
+      // 🔥 FIX: Clean unified replace regex without broken multi-line regex allocations
       aiResponse = aiResponse.replace(/```json/g, "").replace(/```/g, "").trim();
       aiResponse = JSON.parse(aiResponse);
     }
@@ -249,14 +261,25 @@ RETURN EXACTLY IN THIS JSON FORMAT:
 
     await plan.save();
 
-    // 🔥 REAL-TIME UPDATE ALERTS: Push socket event for AI topic evolution modification context
-    if (req.io) {
-      req.io.to(courseId.toString()).emit("new_notification", {
-        title: "Week Plan Material Evolved! ⚡",
-        message: `Topic configurations for Week ${weekNumber} have been dynamically enhanced by AI engine optimization layout.`,
-        type: "plan",
-        courseId: courseId
-      });
+    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ALERTS
+    try {
+      if (course && course.students) {
+        const studentIds = course.students.map(s => s.user.toString());
+        if (studentIds.length > 0) {
+          const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
+          const fcmTokens = users.map(u => u.fcmToken).filter(token => token && token.trim() !== "");
+
+          req.sendUniversalNotification({
+            courseId: courseId,
+            title: "Week Plan Material Evolved! ⚡",
+            message: `Topic configurations for Week ${weekNumber} have been dynamically enhanced by AI engine optimization layout.`,
+            type: "plan",
+            fcmTokens: fcmTokens
+          });
+        }
+      }
+    } catch (notifyErr) {
+      console.log("AI update notification silently failed:", notifyErr.message);
     }
 
     return res.json({ success: true, message: "Week updated using AI", week: plan.weeks[weekIndex] });

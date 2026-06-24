@@ -9,7 +9,8 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontened/screens/Student/Courses/JoinCourseScreen.dart';
 import 'package:frontened/screens/Student/Profile/ProfileScreen.dart';
-import 'package:frontened/services/socket_service.dart'; // 🔥 IMPORTED FOR LIVE PUSH PIPELINE
+import 'package:frontened/services/socket_service.dart';
+import 'package:intl/intl.dart'; // 🔥 IMPORTED FOR DATE FORMATTING
 
 class MainScreen extends StatefulWidget {
   static const String routeName = '/student-placeholder';
@@ -23,10 +24,24 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   List<Map<String, String>> _deletedCourseAlerts = [];
 
+  // 🔥 REAL-TIME ENGINE: For live countdowns on dashboard
+  Timer? _timer;
+
   @override
   void initState() {
     super.initState();
     _loadData();
+
+    // Updates Dashboard every second to keep countdowns accurate
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -41,7 +56,6 @@ class _MainScreenState extends State<MainScreen> {
       if (courseProvider.error == null) {
         await _syncCacheAndFindDeleted(courseProvider.courses);
 
-        // 🔥 INITIALIZE LIVE PUSH NOTIFICATIONS GATEWAY FOR ALL ENROLLED COURSES
         try {
           List<String> activeCourseIds = courseProvider.courses
               .map((c) => c.id.toString())
@@ -120,6 +134,19 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  // 🔥 SAFE PARSER FOR DATES (To prevent compilation errors before model update)
+  DateTime? _getSafeDate(dynamic quiz, String field) {
+    try {
+      dynamic raw = (quiz as dynamic).toJson()[field];
+      if (raw == null) return null;
+      if (raw is DateTime) return raw;
+      return DateTime.tryParse(raw.toString());
+    } catch (e) {
+      // In case the field doesn't exist yet in the model
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final quizProvider = context.watch<QuizProvider>();
@@ -127,8 +154,18 @@ class _MainScreenState extends State<MainScreen> {
     final student = authProvider.user;
     final courseProvider = context.watch<CourseProvider>();
     final courses = courseProvider.courses;
+    final now = DateTime.now();
 
-    final pendingQuizzes = quizProvider.quizzes.where((q) => q.isCompleted != true).toList();
+    // 🔥 DASHBOARD AUTO-FILTERING RULE
+    final pendingQuizzes = quizProvider.quizzes.where((q) {
+      if (q.isCompleted == true) return false;
+
+      final deadline = _getSafeDate(q, 'deadlineDateTime');
+      // DEADLINE PASSED: Remove completely from dashboard
+      if (deadline != null && now.isAfter(deadline)) return false;
+
+      return true;
+    }).toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -245,13 +282,13 @@ class _MainScreenState extends State<MainScreen> {
 
                 const SizedBox(height: 30),
 
-                const Text("Pending Quizzes", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
+                const Text("Pending Exams", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
                 const SizedBox(height: 12),
 
                 if (quizProvider.isLoading)
                   const Center(child: CircularProgressIndicator())
                 else if (pendingQuizzes.isEmpty)
-                  const Text("No pending quizzes. Great job!", style: TextStyle(color: Colors.grey))
+                  const Text("No pending exams. Great job!", style: TextStyle(color: Colors.grey))
                 else
                   ...pendingQuizzes.map((quiz) => LiveQuizCard(quiz: quiz)),
               ],
@@ -267,24 +304,63 @@ class LiveQuizCard extends StatelessWidget {
   final Quiz quiz;
   const LiveQuizCard({super.key, required this.quiz});
 
+  // 🔥 SAFE PARSER INSIDE COMPONENT
+  DateTime? _getSafeDate(dynamic rawQuiz, String field) {
+    try {
+      dynamic raw = (rawQuiz as dynamic).toJson()[field];
+      if (raw == null) return null;
+      if (raw is DateTime) return raw;
+      return DateTime.tryParse(raw.toString());
+    } catch (e) {
+      return null;
+    }
+  }
+
+  String _formatDuration(Duration d) {
+    if (d.isNegative) return "00:00:00";
+    String twoDigits(int n) => n.toString().padLeft(2, "0");
+    String days = d.inDays > 0 ? "${d.inDays}d " : "";
+    String hours = twoDigits(d.inHours.remainder(24));
+    String minutes = twoDigits(d.inMinutes.remainder(60));
+    String seconds = twoDigits(d.inSeconds.remainder(60));
+    return "$days$hours:$minutes:$seconds";
+  }
+
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final openDate = _getSafeDate(quiz, 'openDateTime');
+    final deadline = _getSafeDate(quiz, 'deadlineDateTime');
+
+    // Check if current time is before the open time
+    final isLocked = openDate != null && now.isBefore(openDate);
+
     return GestureDetector(
       onTap: () {
-        Navigator.pushNamed(context, '/quiz-attempt', arguments: quiz);
+        if (isLocked) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("Exam Locked! This exam will activate precisely at ${DateFormat('hh:mm a, dd MMM').format(openDate)}"),
+                backgroundColor: Colors.redAccent,
+                behavior: SnackBarBehavior.floating,
+              )
+          );
+        } else {
+          Navigator.pushNamed(context, '/quiz-attempt', arguments: quiz);
+        }
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 500),
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: Colors.green.withAlpha(15),
+          color: isLocked ? Colors.grey.withAlpha(20) : Colors.green.withAlpha(15),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.green.withAlpha(100), width: 1.5),
+          border: Border.all(color: isLocked ? Colors.grey.withAlpha(100) : Colors.green.withAlpha(100), width: 1.5),
         ),
         child: Row(
           children: [
-            const Icon(Icons.play_circle_fill, color: Colors.green, size: 24),
+            Icon(isLocked ? Icons.lock : Icons.play_circle_fill, color: isLocked ? Colors.grey : Colors.green, size: 24),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -294,14 +370,19 @@ class LiveQuizCard extends StatelessWidget {
                       quiz.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E1B4B))
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isLocked ? Colors.grey.shade700 : const Color(0xFF1E1B4B))
                   ),
                   const SizedBox(height: 6),
-                  const Text("Active Now", style: TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                  if (isLocked)
+                    Text("Unlocks at: ${DateFormat('dd MMM, hh:mm a').format(openDate)}", style: const TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.bold))
+                  else if (deadline != null)
+                    Text("Ends in: ${_formatDuration(deadline.difference(now))}", style: const TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold))
+                  else
+                    const Text("Active Now", style: TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: Colors.green, size: 22),
+            Icon(isLocked ? Icons.lock_clock : Icons.chevron_right, color: isLocked ? Colors.grey : Colors.green, size: 22),
           ],
         ),
       ),

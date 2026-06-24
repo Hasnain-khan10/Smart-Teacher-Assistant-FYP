@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frontened/Provider/quiz_provider.dart';
 import 'package:frontened/Provider/course_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 
 class TeacherManualQuizScreen extends StatefulWidget {
   final String courseId;
@@ -34,8 +35,9 @@ class _TeacherManualQuizScreenState extends State<TeacherManualQuizScreen> {
   final qMarksCtrl = TextEditingController(text: "5");
   String qType = "short";
 
-  // 🔥 THE HUMAN SOLUTION: Simple Dropdown Selection
-  String quizStatus = "live";
+  // 🔥 AUTOMATED TIME-BASED RULES
+  DateTime? openDateTime;
+  DateTime? deadlineDateTime;
 
   @override
   void initState() {
@@ -63,6 +65,34 @@ class _TeacherManualQuizScreenState extends State<TeacherManualQuizScreen> {
     int mcqTotal = mcqQuestions.fold(0, (sum, item) => sum + (item["marks"] as int));
     int subjTotal = subjectiveQuestions.fold(0, (sum, item) => sum + (item["marks"] as int));
     return mcqTotal + subjTotal;
+  }
+
+  // 🔥 FUNCTION TO PICK PRECISE DATE AND TIME FOR AUTOMATION
+  Future<void> _pickDateTime(bool isOpenTime) async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2030),
+    );
+    if (date == null) return;
+
+    if (!mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
+    if (time == null) return;
+
+    final selected = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+
+    setState(() {
+      if (isOpenTime) {
+        openDateTime = selected;
+      } else {
+        deadlineDateTime = selected;
+      }
+    });
   }
 
   void _addOrUpdateMCQ() {
@@ -149,6 +179,17 @@ class _TeacherManualQuizScreenState extends State<TeacherManualQuizScreen> {
       return;
     }
 
+    // 🔥 PRE-VALIDATION CHECK: Ensures teacher selected the time correctly before hitting API
+    if (openDateTime == null || deadlineDateTime == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please set both Open Time and Deadline!"), backgroundColor: Colors.red));
+      return;
+    }
+
+    if (deadlineDateTime!.isBefore(openDateTime!)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error: Deadline cannot be before the Open Time!"), backgroundColor: Colors.red));
+      return;
+    }
+
     final provider = context.read<QuizProvider>();
     List<Map<String, dynamic>> shorts = subjectiveQuestions.where((q) => q["type"] == "short").toList();
     List<Map<String, dynamic>> longs = subjectiveQuestions.where((q) => q["type"] == "long").toList();
@@ -164,15 +205,16 @@ class _TeacherManualQuizScreenState extends State<TeacherManualQuizScreen> {
       questions: mcqQuestions,
       shortQuestions: shorts,
       longQuestions: longs,
-      // 🔥 Hijacking openDateTime parameter to send status so we don't have to rewrite 10 other files!
-      openDateTime: quizStatus,
+      // 🔥 SENDING CORRECT TIME-BASED STRINGS TO BACKEND
+      openDateTime: openDateTime!.toIso8601String(),
+      deadlineDateTime: deadlineDateTime!.toIso8601String(),
     );
 
     if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Exam Published! 🎉"), backgroundColor: Colors.green));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Exam Scheduled & Published! 🎉"), backgroundColor: Colors.green));
       Navigator.pop(context);
     } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(provider.error ?? "Failed to publish"), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(provider.error ?? "Failed to publish exam"), backgroundColor: Colors.red));
     }
   }
 
@@ -220,20 +262,53 @@ class _TeacherManualQuizScreenState extends State<TeacherManualQuizScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                // 🔥 MANUAL STATUS TOGGLE (No more dates!)
-                DropdownButtonFormField<String>(
-                  value: quizStatus,
-                  decoration: InputDecoration(
-                    labelText: "Exam Visibility Status",
-                    prefixIcon: Icon(quizStatus == 'live' ? Icons.visibility : Icons.visibility_off, color: quizStatus == 'live' ? Colors.green : Colors.grey),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: "live", child: Text("Live Now (Visible to Students)", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))),
-                    DropdownMenuItem(value: "draft", child: Text("Locked / Draft (Hidden)", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold))),
+                // 🔥 REVERTED TO AUTOMATED TIME SELECTORS (Protected by Expanded to prevent overflow)
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => _pickDateTime(true),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                          decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.blue.shade200)),
+                          child: Column(
+                              children: [
+                                const Icon(Icons.timer, color: Colors.blue, size: 18),
+                                const SizedBox(height: 4),
+                                Text(
+                                  openDateTime == null ? "Set Open Time" : DateFormat('dd MMM, hh:mm a').format(openDateTime!),
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue),
+                                  textAlign: TextAlign.center,
+                                  overflow: TextOverflow.ellipsis,
+                                )
+                              ]
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => _pickDateTime(false),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                          decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.red.shade200)),
+                          child: Column(
+                              children: [
+                                const Icon(Icons.block, color: Colors.red, size: 18),
+                                const SizedBox(height: 4),
+                                Text(
+                                  deadlineDateTime == null ? "Set Deadline" : DateFormat('dd MMM, hh:mm a').format(deadlineDateTime!),
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red),
+                                  textAlign: TextAlign.center,
+                                  overflow: TextOverflow.ellipsis,
+                                )
+                              ]
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
-                  onChanged: (val) => setState(() => quizStatus = val!),
                 ),
                 const SizedBox(height: 12),
 

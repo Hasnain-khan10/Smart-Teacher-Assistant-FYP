@@ -42,7 +42,6 @@ class QuizProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // 🔥 ULTRA FAST RENDERING: Microtask wrappers ensure the UI Thread is never blocked during heavy API pulls
   void _safeNotify() {
     Future.microtask(() => notifyListeners());
   }
@@ -130,10 +129,18 @@ class QuizProvider with ChangeNotifier {
     finally { _isScanningAI = false; _safeNotify(); }
   }
 
-  Future<bool> updateQuiz({required String quizId, required String courseId, String? title, List<Map<String, dynamic>>? questions, List<Map<String, dynamic>>? shortQuestions, List<Map<String, dynamic>>? longQuestions,}) async {
+  Future<bool> updateQuiz({
+    required String quizId, required String courseId, String? title,
+    List<Map<String, dynamic>>? questions, List<Map<String, dynamic>>? shortQuestions, List<Map<String, dynamic>>? longQuestions,
+    String? openDateTime, String? deadlineDateTime,
+  }) async {
     _isUpdating = true; _error = null; _safeNotify();
     try {
-      final success = await _quizService.updateQuiz(quizId: quizId, title: title, questions: questions, shortQuestions: shortQuestions, longQuestions: longQuestions);
+      final success = await _quizService.updateQuiz(
+        quizId: quizId, title: title, questions: questions,
+        shortQuestions: shortQuestions, longQuestions: longQuestions,
+        openDateTime: openDateTime, deadlineDateTime: deadlineDateTime,
+      );
       if (success) await fetchQuizzes(courseId); return success;
     } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return false; }
     finally { _isUpdating = false; _safeNotify(); }
@@ -165,10 +172,19 @@ class QuizProvider with ChangeNotifier {
     finally { _isGeneratingAI = false; _safeNotify(); }
   }
 
-  Future<Map<String, dynamic>?> createAIQuestionQuiz({required String courseId, required String prompt, required String difficulty, required String type, File? file, int? shortCount, int? shortMarks, int? shortEachMark, int? longCount, int? longMarks, int? longEachMark}) async {
+  Future<Map<String, dynamic>?> createAIQuestionQuiz({
+    required String courseId, required String prompt, required String difficulty, required String type, File? file,
+    int? shortCount, int? shortMarks, int? shortEachMark, int? longCount, int? longMarks, int? longEachMark,
+    String? openDateTime, String? deadlineDateTime,
+  }) async {
     _isGeneratingAI = true; _error = null; _safeNotify();
     try {
-      final result = await _quizService.createAIQuestionQuiz(courseId: courseId, prompt: prompt, file: file, difficulty: difficulty, type: type, shortCount: shortCount, shortMarks: shortMarks, shortEachMark: shortEachMark, longCount: longCount, longMarks: longMarks, longEachMark: longEachMark);
+      final result = await _quizService.createAIQuestionQuiz(
+        courseId: courseId, prompt: prompt, file: file, difficulty: difficulty, type: type,
+        shortCount: shortCount, shortMarks: shortMarks, shortEachMark: shortEachMark,
+        longCount: longCount, longMarks: longMarks, longEachMark: longEachMark,
+        openDateTime: openDateTime, deadlineDateTime: deadlineDateTime,
+      );
       await fetchQuizzes(courseId); return result;
     } catch (e) { _error = e.toString().replaceAll("Exception:", "").trim(); return null; }
     finally { _isGeneratingAI = false; _safeNotify(); }

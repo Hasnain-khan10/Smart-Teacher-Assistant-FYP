@@ -57,11 +57,14 @@ void main() async {
   // Configure Local Notifications for Foreground Channels
   flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
+  // 🔥 CUSTOM HIGH IMPORTANCE OVERLAY SOUND CHANNEL REGISTERED
   channel = const AndroidNotificationChannel(
     'smart_teacher_channel',
     'High Importance Notifications',
     description: 'This channel is used for academic alerts.',
-    importance: Importance.high,
+    importance: Importance.max, // Explicitly max to show heads-up banner
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound('smart_sound'), // Audio mapping reference
   );
 
   await flutterLocalNotificationsPlugin
@@ -70,6 +73,11 @@ void main() async {
 
   // Request Notification Permissions from Device
   await FirebaseMessaging.instance.requestPermission(
+    alert: true, badge: true, sound: true, provisional: false,
+  );
+
+  // Foreground presentation options enabled explicitly
+  await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
     alert: true, badge: true, sound: true,
   );
 
@@ -82,7 +90,6 @@ void main() async {
     RemoteNotification? notification = message.notification;
     AndroidNotification? android = message.notification?.android;
     if (notification != null && android != null) {
-      // 🔥 FIXED PERMANENTLY: Added explicit named parameters to resolve compiler restrictions
       flutterLocalNotificationsPlugin.show(
         id: notification.hashCode,
         title: notification.title,
@@ -92,7 +99,11 @@ void main() async {
             channel.id,
             channel.name,
             channelDescription: channel.description,
+            importance: Importance.max,
+            priority: Priority.high,
             icon: '@mipmap/ic_launcher',
+            sound: const RawResourceAndroidNotificationSound('smart_sound'), // Real-time play asset hook
+            playSound: true,
           ),
         ),
       );

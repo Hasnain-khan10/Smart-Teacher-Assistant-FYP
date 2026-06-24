@@ -47,7 +47,6 @@ class QuizService {
     return response.statusCode == 200;
   }
 
-  // 🔥 UPDATED: Added openDateTime & deadlineDateTime for scheduling
   Future<bool> createQuiz({
     required String courseId, required String title, required String type,
     List? questions, List? shortQuestions, List? longQuestions,
@@ -99,8 +98,18 @@ class QuizService {
     return jsonDecode(response.body);
   }
 
-  Future<bool> updateQuiz({required String quizId, String? title, List? questions, List? shortQuestions, List? longQuestions}) async {
-    final response = await http.put(Uri.parse("${Api.baseUrl}/quizzes/$quizId"), headers: await _headers(), body: jsonEncode({if (title != null) "title": title, if (questions != null) "questions": questions, if (shortQuestions != null) "shortQuestions": shortQuestions, if (longQuestions != null) "longQuestions": longQuestions,}));
+  Future<bool> updateQuiz({
+    required String quizId, String? title, List? questions, List? shortQuestions, List? longQuestions,
+    String? openDateTime, String? deadlineDateTime,
+  }) async {
+    final response = await http.put(Uri.parse("${Api.baseUrl}/quizzes/$quizId"), headers: await _headers(), body: jsonEncode({
+      if (title != null) "title": title,
+      if (questions != null) "questions": questions,
+      if (shortQuestions != null) "shortQuestions": shortQuestions,
+      if (longQuestions != null) "longQuestions": longQuestions,
+      if (openDateTime != null) "openDateTime": openDateTime,
+      if (deadlineDateTime != null) "deadlineDateTime": deadlineDateTime,
+    }));
     return response.statusCode == 200;
   }
 
@@ -127,7 +136,6 @@ class QuizService {
     return null;
   }
 
-  // 🔥 UPDATED: Added openDateTime & deadlineDateTime for scheduling
   Future<Map<String, dynamic>> createAIMCQQuiz({
     required String courseId, required String prompt, required String difficulty,
     required int questionCount, required int marksPerQuestion, File? file,
@@ -156,11 +164,17 @@ class QuizService {
     }
   }
 
-  Future<Map<String, dynamic>> createAIQuestionQuiz({required String courseId, required String prompt, required String difficulty, required String type, File? file, int? shortCount, int? shortMarks, int? shortEachMark, int? longCount, int? longMarks, int? longEachMark}) async {
+  Future<Map<String, dynamic>> createAIQuestionQuiz({
+    required String courseId, required String prompt, required String difficulty, required String type, File? file,
+    int? shortCount, int? shortMarks, int? shortEachMark, int? longCount, int? longMarks, int? longEachMark,
+    String? openDateTime, String? deadlineDateTime,
+  }) async {
     final url = Uri.parse("${Api.baseUrl}/ai/quizzes/descriptive");
     if (file != null && file.path.isNotEmpty) {
       final req = http.MultipartRequest("POST", url)..headers.addAll(await _multipartHeaders());
       req.fields.addAll({"courseId": courseId, "course": courseId, "topic": prompt, "prompt": prompt, "difficulty": difficulty, "type": type, "shortCount": (shortCount ?? 0).toString(), "shortEachMark": (shortEachMark ?? 2).toString(), "longCount": (longCount ?? 0).toString(), "longEachMark": (longEachMark ?? 5).toString()});
+      if(openDateTime != null) req.fields['openDateTime'] = openDateTime;
+      if(deadlineDateTime != null) req.fields['deadlineDateTime'] = deadlineDateTime;
       req.files.add(await http.MultipartFile.fromPath("book", file.path));
       final streamedResponse = await req.send().timeout(const Duration(seconds: 90));
       final res = await http.Response.fromStream(streamedResponse);
@@ -168,7 +182,10 @@ class QuizService {
       if (res.statusCode == 200 && data['success'] == true) return data;
       throw Exception(data['message'] ?? "AI Written Exam Generation Failed");
     } else {
-      final res = await http.post(url, headers: await _headers(), body: jsonEncode({"courseId": courseId, "course": courseId, "topic": prompt, "prompt": prompt, "difficulty": difficulty, "type": type, "shortCount": shortCount ?? 0, "shortEachMark": shortEachMark ?? 2, "longCount": longCount ?? 0, "longEachMark": longEachMark ?? 5})).timeout(const Duration(seconds: 90));
+      final res = await http.post(url, headers: await _headers(), body: jsonEncode({
+        "courseId": courseId, "course": courseId, "topic": prompt, "prompt": prompt, "difficulty": difficulty, "type": type, "shortCount": shortCount ?? 0, "shortEachMark": shortEachMark ?? 2, "longCount": longCount ?? 0, "longEachMark": longEachMark ?? 5,
+        "openDateTime": openDateTime, "deadlineDateTime": deadlineDateTime,
+      })).timeout(const Duration(seconds: 90));
       final data = jsonDecode(res.body);
       if (res.statusCode == 200 && data['success'] == true) return data;
       throw Exception(data['message'] ?? "AI Written Exam Generation Failed");

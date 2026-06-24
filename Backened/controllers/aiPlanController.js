@@ -2,8 +2,9 @@ const path = require("path");
 const fs = require("fs");
 const WeekPlan = require("../models/WeekPlan");
 const Course = require("../models/Course");
+const User = require("../models/User"); // 🔥 Required for Background Push Tokens
 const { generatePlanDocument } = require("../utils/planExportGenerator");
-const { callAI } = require("../services/aiService"); // 🔥 Groq Service Import
+const { callAI } = require("../services/aiService");
 const pdfParse = require("pdf-parse");
 
 exports.createAIPlan = async (req, res) => {
@@ -27,7 +28,7 @@ exports.createAIPlan = async (req, res) => {
 
     let extractedText = "";
 
-    // 🔥 HIGH LIMIT PDF EXTRACTION (Up to 25,000 characters for Groq)
+    // 🔥 HIGH LIMIT PDF EXTRACTION
     if (req.file && req.file.mimetype === "application/pdf") {
       try {
           const dataBuffer = fs.readFileSync(req.file.path);
@@ -38,7 +39,6 @@ exports.createAIPlan = async (req, res) => {
       }
     }
 
-    // 🔥 HIGH DETAIL SYSTEM INSTRUCTION
     const groqPrompt = `You are a Lead Academic Professor at a top-tier University.
 Design a highly detailed, comprehensive 18-Week curriculum.
 Course/Topic: ${finalTopic}
@@ -70,13 +70,11 @@ Return a single JSON object structured EXACTLY like this:
 
     console.log("📅 Generating High-Detail Course Planner via Groq...");
 
-    // 🔥 CALL GROQ AI
-const aiData = await callAI({ prompt: groqPrompt, model: "llama-3.1-70b-versatile" });
+    const aiData = await callAI({ prompt: groqPrompt, model: "llama-3.1-70b-versatile" });
     if (!aiData.weeks || !Array.isArray(aiData.weeks)) {
       return res.status(500).json({ success: false, message: "AI generated an invalid payload." });
     }
 
-    // 🔥 FORCE EXACT 18 WEEKS & HANDLE MISSING DATA
     let formattedWeeks = aiData.weeks.slice(0, 18).map((w, i) => ({
       weekNumber: i + 1,
       title: w.title || `Week ${i + 1}`,
@@ -121,6 +119,28 @@ const aiData = await callAI({ prompt: groqPrompt, model: "llama-3.1-70b-versatil
 
     const savedPlan = await newWeekPlan.save();
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+
+    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE
+    try {
+      if (finalCourseId && finalCourseId !== "UNKNOWN") {
+        const courseData = await Course.findById(finalCourseId).lean();
+        if (courseData && courseData.students && courseData.students.length > 0) {
+          const studentIds = courseData.students.map(s => s.user.toString());
+          const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
+          const fcmTokens = users.map(u => u.fcmToken).filter(t => t && t.trim() !== "");
+
+          req.sendUniversalNotification({
+            courseId: finalCourseId,
+            title: "New AI Curriculum Published 📚",
+            message: `A highly detailed AI-generated 18-week curriculum has been added to your course.`,
+            type: "plan",
+            fcmTokens: fcmTokens
+          });
+        }
+      }
+    } catch (notifyErr) {
+      console.log("AI Plan Notification failed:", notifyErr.message);
+    }
 
     return res.status(200).json({
       success: true,

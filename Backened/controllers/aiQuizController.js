@@ -2,13 +2,15 @@ const path = require("path");
 const fs = require("fs");
 const Quiz = require("../models/Quiz");
 const Course = require("../models/Course");
+const User = require("../models/User"); // 🔥 Required for Background Push Tokens
 const { generateQuizPDF } = require("../utils/quizPdfGenerator");
 const { callAI } = require("../services/aiService");
 const pdfParse = require("pdf-parse");
 
 exports.createAIQuestionQuiz = async (req, res) => {
   try {
-    let { courseId, topic, prompt, courseTitle, difficulty = "hard", shortCount = 0, longCount = 0, shortEachMark = 2, longEachMark = 5, type = "long" } = req.body;
+    // 🔥 AUTOMATED TIME-BASED PARSING ATTACHED
+    let { courseId, topic, prompt, courseTitle, difficulty = "hard", shortCount = 0, longCount = 0, shortEachMark = 2, longEachMark = 5, type = "long", openDateTime, deadlineDateTime } = req.body;
 
     const finalCourseId = (courseId && courseId !== "UNKNOWN") ? courseId : null;
     let finalTopic = topic || prompt || courseTitle || "General Subjective Assessment";
@@ -23,9 +25,12 @@ exports.createAIQuestionQuiz = async (req, res) => {
     const sEach = Number(shortEachMark) || 2;
     const lEach = Number(longEachMark) || 5;
 
+    // Save properly formatted Date objects
+    let parsedOpenDate = openDateTime ? new Date(openDateTime) : new Date();
+    let parsedDeadlineDate = deadlineDateTime ? new Date(deadlineDateTime) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+
     let extractedText = "";
 
-    // 🔥 HIGH LIMIT PDF EXTRACTION
     if (req.file && req.file.mimetype === "application/pdf") {
       try {
           const dataBuffer = fs.readFileSync(req.file.path);
@@ -43,7 +48,6 @@ exports.createAIQuestionQuiz = async (req, res) => {
       formatRequirementText = `Generate ${sCount} short and ${lCount} long questions. \nJSON Layout:\n{ "title": "Mixed Paper", "description": "...", "shortQuestions": [{ "question": "...", "marks": ${sEach}, "idealAnswer": "...", "rubric": "..." }], "longQuestions": [{ "question": "...", "marks": ${lEach}, "idealAnswer": "...", "rubric": "..." }] }`;
     }
 
-    // 🔥 HIGH-LEVEL UNIVERSITY PROMPT
     const groqPrompt = `You are a Senior Academic Assessor. Generate descriptive exam questions.
 Topic: ${finalTopic}
 Difficulty: ${difficulty}
@@ -51,8 +55,7 @@ ${extractedText ? `Reference Text Context:\n${extractedText}\n\n` : ''}
 STRICT RULE: Respond with clean raw JSON only. Provide deeply detailed 'idealAnswer' and a specific 'rubric' for fair grading.
 ${formatRequirementText}`;
 
-    // 🔥 CALL GROQ AI
-const aiData = await callAI({ prompt: groqPrompt, model: "llama-3.1-70b-versatile" });
+    const aiData = await callAI({ prompt: groqPrompt, model: "llama-3.1-70b-versatile" });
     if (!aiData || (!aiData.shortQuestions && !aiData.longQuestions)) {
       return res.status(500).json({ success: false, message: "Invalid JSON structure from Groq" });
     }
@@ -82,11 +85,35 @@ const aiData = await callAI({ prompt: groqPrompt, model: "llama-3.1-70b-versatil
       shortQuestions: dbShortArray,
       longQuestions: dbLongArray,
       totalMarks: totalMarks,
-      isAIScanned: false
+      isAIScanned: false,
+      openDateTime: parsedOpenDate,
+      deadlineDateTime: parsedDeadlineDate
     });
 
     await savedQuizModel.save();
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+
+    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE
+    try {
+      if (finalCourseId && finalCourseId !== "UNKNOWN") {
+        const courseData = await Course.findById(finalCourseId).lean();
+        if (courseData && courseData.students && courseData.students.length > 0) {
+          const studentIds = courseData.students.map(s => s.user.toString());
+          const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
+          const fcmTokens = users.map(u => u.fcmToken).filter(t => t && t.trim() !== "");
+
+          req.sendUniversalNotification({
+            courseId: finalCourseId,
+            title: "AI Exam Scheduled! 🤖📝",
+            message: `An AI-generated written exam has been securely scheduled for your course. Check your dashboard for active timings.`,
+            type: "quiz",
+            fcmTokens: fcmTokens
+          });
+        }
+      }
+    } catch (notifyErr) {
+      console.log("AI Quiz Notification failed:", notifyErr.message);
+    }
 
     return res.status(200).json({
       success: true,

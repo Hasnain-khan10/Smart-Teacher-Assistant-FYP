@@ -1,6 +1,7 @@
 const Quiz = require("../models/Quiz");
 const Course = require("../models/Course");
 const Attempt = require("../models/Attempt");
+const User = require("../models/User"); // 🔥 Required to get FCM Tokens for push alerts
 const path = require("path");
 const { callAI } = require("../services/aiService");
 const { generateQuizPDF } = require("../utils/quizPdfGenerator");
@@ -9,7 +10,7 @@ const sharp = require("sharp");
 
 exports.createQuiz = async (req, res) => {
   try {
-    const { title, type, questions, shortQuestions, longQuestions, openDateTime } = req.body;
+    const { title, type, questions, shortQuestions, longQuestions, openDateTime, deadlineDateTime } = req.body;
     const courseId = req.body.courseId || req.body.course;
 
     if (!courseId || !title || !type) return res.status(400).json({ message: "Missing required fields" });
@@ -17,30 +18,40 @@ exports.createQuiz = async (req, res) => {
     const course = await Course.findOne({ _id: courseId, teacher: req.user._id }).lean();
     if (!course) return res.status(404).json({ message: "Course not found" });
 
-    const finalStatus = openDateTime === "draft" ? "draft" : "live";
+    let parsedOpenDate = openDateTime ? new Date(openDateTime) : new Date();
+    let parsedDeadlineDate = deadlineDateTime ? new Date(deadlineDateTime) : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     let quiz;
     if (type === "mcq") {
       const totalMarks = (questions || []).reduce((sum, q) => sum + (q.marks || 1), 0);
-      quiz = await Quiz.create({ course: courseId, teacher: req.user._id, title, type: "mcq", questions, totalMarks, status: finalStatus });
+      quiz = await Quiz.create({ course: courseId, teacher: req.user._id, title, type: "mcq", questions, totalMarks, openDateTime: parsedOpenDate, deadlineDateTime: parsedDeadlineDate });
     } else if (type === "question") {
       const totalMarks = [...(shortQuestions || []), ...(longQuestions || [])].reduce((sum, q) => sum + (q.marks || 0), 0);
-      quiz = await Quiz.create({ course: courseId, teacher: req.user._id, title, type: "question", shortQuestions: shortQuestions || [], longQuestions: longQuestions || [], totalMarks, status: finalStatus });
+      quiz = await Quiz.create({ course: courseId, teacher: req.user._id, title, type: "question", shortQuestions: shortQuestions || [], longQuestions: longQuestions || [], totalMarks, openDateTime: parsedOpenDate, deadlineDateTime: parsedDeadlineDate });
     } else if (type === "mixed") {
       const totalMarks = [...(questions || []), ...(shortQuestions || []), ...(longQuestions || [])].reduce((sum, q) => sum + (q.marks || 0), 0);
-      quiz = await Quiz.create({ course: courseId, teacher: req.user._id, title, type: "mixed", questions: questions || [], shortQuestions: shortQuestions || [], longQuestions: longQuestions || [], totalMarks, status: finalStatus });
+      quiz = await Quiz.create({ course: courseId, teacher: req.user._id, title, type: "mixed", questions: questions || [], shortQuestions: shortQuestions || [], longQuestions: longQuestions || [], totalMarks, openDateTime: parsedOpenDate, deadlineDateTime: parsedDeadlineDate });
     } else {
       return res.status(400).json({ message: "Invalid quiz type" });
     }
 
-    // 🔥 REAL-TIME UPDATE ENGINE: Broadcast to course room if exam is pushed live instantly
-    if (finalStatus === "live" && req.io) {
-      req.io.to(courseId.toString()).emit("new_notification", {
-        title: "New Exam Released! 📝",
-        message: `An examination titled "${title}" has been authorized and is now active for submission.`,
-        type: "quiz",
-        courseId: courseId
-      });
+    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE (Socket + Native Push with Custom Sound)
+    try {
+      const studentIds = course.students.map(s => s.user.toString());
+      if (studentIds.length > 0) {
+        const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
+        const fcmTokens = users.map(u => u.fcmToken).filter(token => token && token.trim() !== "");
+
+        req.sendUniversalNotification({
+          courseId: course._id,
+          title: "New Exam Scheduled! 📝",
+          message: `An examination titled "${title}" has been scheduled. Check your dashboard for active timings.`,
+          type: "quiz",
+          fcmTokens: fcmTokens
+        });
+      }
+    } catch (notifyErr) {
+      console.log("Quiz create notification silently failed:", notifyErr.message);
     }
 
     return res.status(201).json({ message: "Quiz configured successfully", quiz });
@@ -79,7 +90,7 @@ exports.getAllQuizzes = async (req, res) => {
       const courseIds = courses.map(c => c._id);
       if (courseIds.length === 0) return res.status(200).json({ quizzes: [] });
 
-      const quizzesData = await Quiz.find({ course: { $in: courseIds }, status: "live" }).populate("course", "title").populate("teacher", "name").lean();
+      const quizzesData = await Quiz.find({ course: { $in: courseIds } }).populate("course", "title").populate("teacher", "name").lean();
       const attempts = await Attempt.find({ student: req.user._id, quiz: { $in: quizzesData.map(q => q._id) } }).lean();
 
       const attemptMap = {};
@@ -114,7 +125,7 @@ exports.getQuizzesByCourse = async (req, res) => {
     if (req.user.role === "teacher") {
       quizzes = await Quiz.find({ course: req.params.courseId, teacher: req.user._id }).lean();
     } else {
-      quizzes = await Quiz.find({ course: req.params.courseId, status: "live" }).populate("teacher", "name email").lean();
+      quizzes = await Quiz.find({ course: req.params.courseId }).populate("teacher", "name email").lean();
     }
     res.json({ quizzes });
   } catch (error) {
@@ -197,8 +208,29 @@ exports.attemptQuiz = async (req, res) => {
 exports.deleteQuiz = async (req, res) => {
   try {
     const quizId = req.params.id;
-    const quiz = await Quiz.findOne({ _id: quizId, teacher: req.user._id });
+    const quiz = await Quiz.findOne({ _id: quizId, teacher: req.user._id }).populate("course");
     if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+
+    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE: Notify students before deleting
+    try {
+      if (quiz.course && quiz.course.students) {
+        const studentIds = quiz.course.students.map(s => s.user.toString());
+        if (studentIds.length > 0) {
+          const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
+          const fcmTokens = users.map(u => u.fcmToken).filter(token => token && token.trim() !== "");
+
+          req.sendUniversalNotification({
+            courseId: quiz.course._id,
+            title: "Exam Deleted ⚠️",
+            message: `The instructor has cancelled/deleted the examination "${quiz.title}".`,
+            type: "quiz_deleted",
+            fcmTokens: fcmTokens
+          });
+        }
+      }
+    } catch (notifyErr) {
+      console.log("Delete notification silently failed:", notifyErr.message);
+    }
 
     await Attempt.deleteMany({ quiz: quizId });
     await quiz.deleteOne();
@@ -210,7 +242,7 @@ exports.deleteQuiz = async (req, res) => {
 
 exports.updateQuiz = async (req, res) => {
   try {
-    const quiz = await Quiz.findOne({ _id: req.params.id, teacher: req.user._id });
+    const quiz = await Quiz.findOne({ _id: req.params.id, teacher: req.user._id }).populate("course");
     if (!quiz) return res.status(404).json({ message: "Quiz not found" });
 
     if (req.body.title) quiz.title = req.body.title;
@@ -218,9 +250,8 @@ exports.updateQuiz = async (req, res) => {
     if (req.body.shortQuestions) quiz.shortQuestions = req.body.shortQuestions;
     if (req.body.longQuestions) quiz.longQuestions = req.body.longQuestions;
 
-    if (req.body.openDateTime) {
-      quiz.status = req.body.openDateTime === "draft" ? "draft" : "live";
-    }
+    if (req.body.openDateTime) quiz.openDateTime = new Date(req.body.openDateTime);
+    if (req.body.deadlineDateTime) quiz.deadlineDateTime = new Date(req.body.deadlineDateTime);
 
     let total = 0;
     if (quiz.type === "mcq") total = (quiz.questions || []).reduce((sum, q) => sum + (q.marks || 1), 0);
@@ -229,14 +260,25 @@ exports.updateQuiz = async (req, res) => {
     quiz.totalMarks = total;
     await quiz.save();
 
-    // 🔥 REAL-TIME UPDATE ENGINE: Broadcast state change context
-    if (req.io) {
-      req.io.to(quiz.course.toString()).emit("new_notification", {
-        title: quiz.status === "live" ? "Exam Released live! 📝" : "Exam Closed/Locked 🔒",
-        message: quiz.status === "live" ? `"${quiz.title}" has been authorized live.` : `"${quiz.title}" has been locked.`,
-        type: "quiz",
-        courseId: quiz.course
-      });
+    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE
+    try {
+      if (quiz.course && quiz.course.students) {
+        const studentIds = quiz.course.students.map(s => s.user.toString());
+        if (studentIds.length > 0) {
+          const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
+          const fcmTokens = users.map(u => u.fcmToken).filter(token => token && token.trim() !== "");
+
+          req.sendUniversalNotification({
+            courseId: quiz.course._id,
+            title: "Exam Updated 🔄",
+            message: `"${quiz.title}" schedules or configurations have been updated by your instructor.`,
+            type: "quiz",
+            fcmTokens: fcmTokens
+          });
+        }
+      }
+    } catch (notifyErr) {
+      console.log("Update notification silently failed:", notifyErr.message);
     }
 
     res.json({ message: "Quiz updated successfully", quiz });
@@ -327,14 +369,20 @@ CRITICAL INSTRUCTION: Output STRICT JSON ONLY. No other text.
 
     for (const file of req.files) if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
 
-    // 🔥 REAL-TIME UPDATE ENGINE: Notify specific student that AI has graded their uploaded question sheet
-    if (req.io) {
-      req.io.to(courseId.toString()).emit("new_notification", {
-        title: "AI Auto-Grading Complete! 🤖",
-        message: `Your paper script for "${originalQuiz.title}" has been processed and graded by AI. Check your results dashboard context.`,
-        type: "result",
-        courseId: courseId
-      });
+    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE: Notify ONLY the specific student
+    try {
+      const specificStudent = await User.findById(studentId).select("fcmToken").lean();
+      if (specificStudent && specificStudent.fcmToken) {
+        req.sendUniversalNotification({
+          courseId: courseId,
+          title: "AI Auto-Grading Complete! 🤖",
+          message: `Your paper script for "${originalQuiz.title}" has been processed and graded by AI. Check your results dashboard context.`,
+          type: "result",
+          fcmTokens: [specificStudent.fcmToken] // 🎯 Direct hit to only this student's device
+        });
+      }
+    } catch (notifyErr) {
+      console.log("AI Scan notification silently failed:", notifyErr.message);
     }
 
     return res.status(200).json({ message: "Question Scanned Successfully", score: attempt.score });
@@ -361,14 +409,22 @@ exports.updateManualMarks = async (req, res) => {
     }
     await attempt.save();
 
-    // 🔥 REAL-TIME UPDATE ENGINE: Notify student of manual verification score updates
-    if (req.io && attempt.quiz) {
-      req.io.to(attempt.quiz.course.toString()).emit("new_notification", {
-        title: "Marks Verified by Teacher 👨‍🏫",
-        message: `Instructor has updated/verified evaluation marks for your exam context submission.`,
-        type: "result",
-        courseId: attempt.quiz.course
-      });
+    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE: Notify ONLY the specific student
+    try {
+      if (attempt.quiz && attempt.student) {
+        const specificStudent = await User.findById(attempt.student).select("fcmToken").lean();
+        if (specificStudent && specificStudent.fcmToken) {
+          req.sendUniversalNotification({
+            courseId: attempt.quiz.course,
+            title: "Marks Verified by Teacher 👨‍🏫",
+            message: `Instructor has updated/verified evaluation marks for your exam submission.`,
+            type: "result",
+            fcmTokens: [specificStudent.fcmToken] // 🎯 Direct hit to only this student's device
+          });
+        }
+      }
+    } catch (notifyErr) {
+      console.log("Manual Marks notification silently failed:", notifyErr.message);
     }
 
     return res.status(200).json({ message: "Marks updated successfully!", score: attempt.score });

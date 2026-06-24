@@ -4,3 +4,4 @@ frontened/.dart_tool/
 frontened/build/
 frontened/.flutter-plugins
 frontened/.flutter-plugins-dependencies
+Backened/firebase-service-account.json

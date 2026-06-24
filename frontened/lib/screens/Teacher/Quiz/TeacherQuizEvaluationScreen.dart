@@ -33,16 +33,16 @@ class _TeacherQuizEvaluationScreenState extends State<TeacherQuizEvaluationScree
     if (mounted && data != null) {
       setState(() {
         _quizResultsData = data;
-        // Automatically populate controllers if list data exists
-        final attempts = data['attempts'] as List?;
+        final attempts = data['results'] as List?;
         if (attempts != null && attempts.isNotEmpty) {
           final targetAttempt = attempts.firstWhere(
-                (element) => element['_id'] == widget.attemptId,
+                (element) => element['attemptId'].toString() == widget.attemptId,
             orElse: () => null,
           );
-          if (targetAttempt != null && targetAttempt['answers'] != null) {
-            for (var ans in targetAttempt['answers']) {
-              _controllers.add(TextEditingController(text: (ans['manualMarks'] ?? ans['score'] ?? 0).toString()));
+          if (targetAttempt != null && targetAttempt['detailedAnswers'] != null) {
+            _controllers.clear();
+            for (var ans in targetAttempt['detailedAnswers']) {
+              _controllers.add(TextEditingController(text: (ans['obtained_marks'] ?? 0).toString()));
             }
           }
         }
@@ -61,7 +61,6 @@ class _TeacherQuizEvaluationScreenState extends State<TeacherQuizEvaluationScree
   Future<void> _saveIndividualMarks(int index, String localAttemptId, int newScore) async {
     setState(() => _isSaving = true);
 
-    // 🔥 FIXED PERMANENTLY: Removed invalid parameter 'quizId' from provider call
     bool success = await Provider.of<QuizProvider>(context, listen: false).updateManualMarks(
         attemptId: localAttemptId,
         manualScore: newScore,
@@ -92,8 +91,9 @@ class _TeacherQuizEvaluationScreenState extends State<TeacherQuizEvaluationScree
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Quiz Evaluation Panel", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text("Quiz Evaluation Panel", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         backgroundColor: const Color(0xFF4F46E5),
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: _controllers.isEmpty
           ? const Center(child: Text("No answer scripts found to evaluate."))

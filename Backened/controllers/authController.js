@@ -9,9 +9,6 @@ const { OAuth2Client } = require("google-auth-library");
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-// ============================================
-// GENERATE JWT
-// ============================================
 const generateToken = (user) => {
   return jwt.sign(
     { id: user._id || user.id, role: user.role },
@@ -20,9 +17,6 @@ const generateToken = (user) => {
   );
 };
 
-// ============================================
-// SIGNUP
-// ============================================
 exports.signup = async (req, res) => {
   try {
     const {
@@ -30,13 +24,13 @@ exports.signup = async (req, res) => {
       fatherName, cnic, department,
       rollNumber, semester, section,
       qualification, experience, speciality,
+      fcmToken // 🔥 CAUGHT FROM FLUTTER APP
     } = req.body;
 
     if (!role || !["teacher", "student"].includes(role)) {
       return res.status(400).json({ message: "Role is required and must be valid" });
     }
 
-    // 🔥 SPEED OPTIMIZATION: .lean() for faster read operations
     const existingUser = await User.findOne({ email }).lean();
     if (existingUser) {
       return res.status(400).json({ message: "User already exists" });
@@ -57,7 +51,7 @@ exports.signup = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const userData = {
-      name, email, password: hashedPassword, role, fatherName, cnic, department,
+      name, email, password: hashedPassword, role, fatherName, cnic, department, fcmToken: fcmToken || ""
     };
 
     if (role === "student") {
@@ -88,15 +82,11 @@ exports.signup = async (req, res) => {
   }
 };
 
-// ============================================
-// LOGIN (SUPER FAST)
-// ============================================
 exports.login = async (req, res) => {
   try {
-    const { email, password, role } = req.body;
+    const { email, password, role, fcmToken } = req.body; // 🔥 CAUGHT FROM APP
 
-    // 🔥 SPEED OPTIMIZATION: .lean() skips Mongoose object hydration, making it lightning fast
-    const user = await User.findOne({ email }).lean();
+    const user = await User.findOne({ email });
 
     if (!user) {
       return res.status(400).json({ message: "Invalid credentials" });
@@ -111,25 +101,28 @@ exports.login = async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
+    // 🔥 SAVE DEVICE FCM TOKEN TO SEND BACKGROUND NOTIFICATIONS LATER
+    if (fcmToken && user.fcmToken !== fcmToken) {
+      user.fcmToken = fcmToken;
+      await user.save();
+    }
+
     const token = generateToken(user);
-    delete user.password; // Works instantly because user is now a plain JS object
+    const userResponse = user.toObject();
+    delete userResponse.password;
 
     res.json({
       message: "Login successful",
       token,
-      user,
+      user: userResponse,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
 
-// ============================================
-// PROFILE (INSTANT LOAD)
-// ============================================
 exports.getProfile = async (req, res) => {
   try {
-    // 🔥 SPEED OPTIMIZATION: Instant read with .lean()
     const user = await User.findById(req.user._id).select("-password").lean();
     res.json({
       message: "Profile fetched successfully",
@@ -140,9 +133,6 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-// ============================================
-// UPDATE PROFILE (NO REDUNDANT DB CALLS)
-// ============================================
 exports.updateProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
@@ -155,12 +145,14 @@ exports.updateProfile = async (req, res) => {
       name, fatherName, cnic, department,
       rollNumber, semester, section,
       qualification, experience, speciality,
+      fcmToken // 🔥 UPDATE FCM EXPLICITLY IF REFRESHED
     } = req.body;
 
     if (name) user.name = name;
     if (fatherName) user.fatherName = fatherName;
     if (cnic) user.cnic = cnic;
     if (department) user.department = department;
+    if (fcmToken) user.fcmToken = fcmToken;
 
     if (user.role === "student") {
       if (rollNumber) user.rollNumber = rollNumber;
@@ -183,7 +175,6 @@ exports.updateProfile = async (req, res) => {
 
     await user.save();
 
-    // 🔥 SPEED OPTIMIZATION: Removed the duplicate User.findById call. Converted existing object instantly.
     const updatedUser = user.toObject();
     delete updatedUser.password;
 
@@ -196,9 +187,6 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-// =============================================
-// FORGOT PASSWORD
-// =============================================
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -225,15 +213,11 @@ exports.forgotPassword = async (req, res) => {
   }
 };
 
-// =============================================
-// VERIFY OTP
-// =============================================
 exports.verifyOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
     if (!email || !otp) return res.status(400).json({ message: "Email and OTP are required" });
 
-    // 🔥 SPEED OPTIMIZATION: .lean() applied
     const user = await User.findOne({ email }).lean();
     if (!user) return res.status(404).json({ message: "User not found" });
     if (user.resetOTP !== otp) return res.status(400).json({ message: "Invalid OTP" });
@@ -245,9 +229,6 @@ exports.verifyOTP = async (req, res) => {
   }
 };
 
-// =============================================
-// RESET PASSWORD
-// =============================================
 exports.resetPassword = async (req, res) => {
   try {
     const { email, newPassword } = req.body;
@@ -268,12 +249,9 @@ exports.resetPassword = async (req, res) => {
   }
 };
 
-// ============================================
-// GOOGLE LOGIN (ULTRA FAST)
-// ============================================
 exports.googleLogin = async (req, res) => {
   try {
-    const { idToken, role } = req.body;
+    const { idToken, role, fcmToken } = req.body; // 🔥 FCM FOR GOOGLE LOGINS
     if (!idToken) return res.status(400).json({ message: "No ID token provided" });
     if (!role || !["teacher", "student"].includes(role)) return res.status(400).json({ message: "Role is required" });
 
@@ -283,16 +261,20 @@ exports.googleLogin = async (req, res) => {
     });
     const { email, name } = ticket.getPayload();
 
-    // 🔥 SPEED OPTIMIZATION: Instant user lookup
-    let user = await User.findOne({ email }).lean();
+    let user = await User.findOne({ email });
 
     if (user) {
       if (user.role !== role) {
         return res.status(400).json({ message: `This email is already registered as ${user.role}` });
       }
+      if (fcmToken && user.fcmToken !== fcmToken) {
+        user.fcmToken = fcmToken;
+        await user.save();
+      }
+      user = user.toObject();
     } else {
       const hashedPassword = await bcrypt.hash(crypto.randomBytes(16).toString("hex"), 10);
-      const userData = { name, email, password: hashedPassword, role };
+      const userData = { name, email, password: hashedPassword, role, fcmToken: fcmToken || "" };
 
       if (role === "student") {
         userData.rollNumber = "N/A"; userData.semester = "N/A"; userData.section = "N/A";
@@ -305,7 +287,7 @@ exports.googleLogin = async (req, res) => {
     }
 
     const token = generateToken(user);
-    delete user.password; // Fast deletion from plain object
+    delete user.password;
 
     res.status(200).json({
       message: "Google login successful",

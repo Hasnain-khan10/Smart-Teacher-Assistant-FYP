@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:firebase_messaging/firebase_messaging.dart'; // 🔥 Required to fetch design architecture dynamic token
 import 'package:frontened/core/api.dart';
 import 'package:frontened/models/user_model.dart';
 import 'package:frontened/models/auth_models.dart';
@@ -10,10 +11,23 @@ class ApiService {
 
   // ================= LOGIN =================
   static Future<AuthModel> login(String email, String password, String role) async {
+    // 🔥 AUTOMATIC DYNAMIC TOKEN FETCH IN BACKGROUND EXTRACTION
+    String? fcmToken;
+    try {
+      fcmToken = await FirebaseMessaging.instance.getToken();
+    } catch (e) {
+      fcmToken = "";
+    }
+
     final response = await http.post(
       Uri.parse("${Api.baseUrl}/auth/login"),
       headers: {"Content-Type": "application/json"},
-      body: jsonEncode({"email": email, "password": password, "role": role}),
+      body: jsonEncode({
+        "email": email,
+        "password": password,
+        "role": role,
+        "fcmToken": fcmToken ?? "" // Transferred to secure user doc on login
+      }),
     );
     final data = jsonDecode(response.body);
     if (response.statusCode == 200) {
@@ -33,9 +47,18 @@ class ApiService {
     String? rollNumber, String? semester, String? section,
     String? qualification, String? experience, String? speciality,
   }) async {
+    // 🔥 AUTOMATIC DYNAMIC TOKEN FETCH ON SIGNUP
+    String? fcmToken;
+    try {
+      fcmToken = await FirebaseMessaging.instance.getToken();
+    } catch (e) {
+      fcmToken = "";
+    }
+
     final Map<String, dynamic> body = {
       "name": name, "email": email, "password": password, "role": role,
       "fatherName": fatherName, "cnic": cnic, "department": department,
+      "fcmToken": fcmToken ?? "" // Transferred on new user instantiation
     };
 
     if (role == "student") {
@@ -98,6 +121,13 @@ class ApiService {
     if (experience != null) request.fields["experience"] = experience;
     if (speciality != null) request.fields["speciality"] = speciality;
 
+    // Refresh token validation parameter during profile maintenance updates
+    String? fcmToken;
+    try {
+      fcmToken = await FirebaseMessaging.instance.getToken();
+      if (fcmToken != null) request.fields["fcmToken"] = fcmToken;
+    } catch (_) {}
+
     if (profileImage != null) {
       request.files.add(await http.MultipartFile.fromPath("profileImage", profileImage.path));
     }
@@ -152,10 +182,20 @@ class ApiService {
   }
 
   static Future<AuthModel> googleSignIn(String idToken, String role) async {
+    // 🔥 AUTOMATIC TOKEN EXTRACTION FOR GOOGLE OAUTH SECURITY LAYERS
+    String? fcmToken;
+    try {
+      fcmToken = await FirebaseMessaging.instance.getToken();
+    } catch (_) {}
+
     final response = await http.post(
       Uri.parse("${Api.baseUrl}/auth/google-login"),
       headers: {"Content-Type": "application/json"},
-      body: jsonEncode({"idToken": idToken, "role": role}),
+      body: jsonEncode({
+        "idToken": idToken,
+        "role": role,
+        "fcmToken": fcmToken ?? ""
+      }),
     );
     final data = jsonDecode(response.body);
     if (response.statusCode == 200) {

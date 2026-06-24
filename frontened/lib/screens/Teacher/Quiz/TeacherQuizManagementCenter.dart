@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontened/Provider/course_provider.dart';
@@ -6,7 +5,6 @@ import 'package:frontened/Provider/quiz_provider.dart';
 
 import 'package:frontened/screens/Teacher/Quiz/TeacherQuizPreviewScreen.dart';
 import 'package:frontened/screens/Teacher/Quiz/TeacherQuizEvaluationScreen.dart';
-import 'package:frontened/screens/Teacher/Quiz/TeacherScannerOverlay.dart';
 import 'package:frontened/screens/Teacher/Quiz/TeacherEditQuizScreen.dart';
 
 class TeacherQuizManagementCenter extends StatefulWidget {
@@ -46,7 +44,6 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
     context.read<QuizProvider>().fetchQuizResults(widget.quizId, quizId: widget.quizId);
   }
 
-  // 🔥 FIXED: Removing incompatible parameters (courseId, studentId, etc.) and aligning with TeacherQuizEvaluationScreen signature.
   void _openStudentEvaluation(String studentId, String studentName, List results, {required bool isResultView}) {
     final attempt = results.firstWhere((r) => r["studentId"] == studentId, orElse: () => null);
 
@@ -54,7 +51,6 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
       context,
       MaterialPageRoute(
         builder: (_) => TeacherQuizEvaluationScreen(
-          // Ensure valid fallback to prevent crashing if attempt is unexpectedly null
           attemptId: attempt != null ? attempt["attemptId"].toString() : "",
           quizId: widget.quizId,
         ),
@@ -213,7 +209,7 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
             ),
             child: Row(
               children: [
@@ -231,7 +227,7 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                  decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
                   child: Text("$marks / ${widget.totalMarks}", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
                 ),
               ],
@@ -262,7 +258,7 @@ class _TeacherQuizManagementCenterState extends State<TeacherQuizManagementCente
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.grey.shade200),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
           ),
           child: Row(
             children: [

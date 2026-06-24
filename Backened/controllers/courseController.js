@@ -1,5 +1,5 @@
 const Course = require("../models/Course");
-
+const User = require("../models/User"); // Added User model to fetch FCM tokens for targeted background alerts
 
 // ===============================
 // CREATE COURSE
@@ -16,7 +16,7 @@ exports.createCourse = async (req, res) => {
       return res.status(403).json({ message: "Only teachers can create courses" });
     }
 
-    if (!title || !courseCode || !creditHours  || !semester) {
+    if (!title || !courseCode || !creditHours || !semester) {
       return res.status(400).json({
         message: "All fields including semester are required",
       });
@@ -28,29 +28,28 @@ exports.createCourse = async (req, res) => {
       creditHours,
       syllabus,
       books: books || [],
-      semester, // ✅ FROM TEACHER INPUT
+      semester,
       teacher: req.user._id,
     });
 
     const joinLink = `${req.protocol}://${req.get("host")}/api/courses/join/${course.joinCode}`;
 
     return res.status(201).json({
-  success: true,
-  message: "Course created successfully",
-
-  course: {
-    _id: course._id,
-    title: course.title,
-    courseCode: course.courseCode,
-    creditHours: course.creditHours,
-    syllabus: course.syllabus,
-    books: course.books,
-    semester: course.semester,
-    teacher: course.teacher,
-    joinCode: course.joinCode,
-    joinLink,
-  },
-});
+      success: true,
+      message: "Course created successfully",
+      course: {
+        _id: course._id,
+        title: course.title,
+        courseCode: course.courseCode,
+        creditHours: course.creditHours,
+        syllabus: course.syllabus,
+        books: course.books,
+        semester: course.semester,
+        teacher: course.teacher,
+        joinCode: course.joinCode,
+        joinLink,
+      },
+    });
 
   } catch (error) {
     return res.status(500).json({
@@ -59,8 +58,6 @@ exports.createCourse = async (req, res) => {
     });
   }
 };
-
-
 
 // ===============================
 // JOIN COURSE
@@ -98,8 +95,23 @@ exports.joinCourse = async (req, res) => {
 
     await course.save();
 
-    console.log("BODY:", req.body);
-console.log("JOIN CODE:", req.body.code || req.body.joinCode);
+    // 🔥 REAL-TIME UNIVERSAL NOTIFICATION: Alert the teacher that a new student joined
+    try {
+      const teacher = await User.findById(course.teacher).lean();
+      const student = await User.findById(req.user._id).lean();
+
+      if (teacher && teacher.fcmToken) {
+        req.sendUniversalNotification({
+          courseId: course._id,
+          title: "New Student Enrolled 🎓",
+          message: `${student.name} has joined your course "${course.title}".`,
+          type: "course",
+          fcmTokens: [teacher.fcmToken]
+        });
+      }
+    } catch (notifyErr) {
+      console.log("Teacher notification silently failed:", notifyErr.message);
+    }
 
     res.status(200).json({
       success: true,
@@ -115,15 +127,11 @@ console.log("JOIN CODE:", req.body.code || req.body.joinCode);
   }
 };
 
-
 // ===============================
 // GET COURSE STUDENTS (ONLY ENROLLED)
 // ===============================
 exports.getCourseStudents = async (req, res) => {
   try {
-    // =========================
-    // AUTH CHECK
-    // =========================
     if (!req.user) {
       return res.status(401).json({
         success: false,
@@ -131,9 +139,6 @@ exports.getCourseStudents = async (req, res) => {
       });
     }
 
-    // =========================
-    // ONLY TEACHER ALLOWED
-    // =========================
     if (req.user.role !== "teacher") {
       return res.status(403).json({
         success: false,
@@ -141,13 +146,10 @@ exports.getCourseStudents = async (req, res) => {
       });
     }
 
-    // =========================
-    // FIND COURSE (OWNER ONLY)
-    // =========================
     const course = await Course.findOne({
-  _id: req.params.courseId,
-  teacher: req.user._id,
-}).populate("students.user", "name email profileImage");
+      _id: req.params.courseId,
+      teacher: req.user._id,
+    }).populate("students.user", "name email profileImage");
 
     if (!course) {
       return res.status(404).json({
@@ -156,11 +158,8 @@ exports.getCourseStudents = async (req, res) => {
       });
     }
 
-    // =========================
-    // EXTRACT ONLY ENROLLED STUDENTS
-    // =========================
     const students = course.students
-      .filter((s) => s.user) // safety check
+      .filter((s) => s.user)
       .map((s) => ({
         _id: s.user._id,
         name: s.user.name,
@@ -169,14 +168,6 @@ exports.getCourseStudents = async (req, res) => {
         progress: s.progress || 0,
       }));
 
-      console.log(course.students);
-
-      console.log("COURSE FOUND:", course);
-console.log("STUDENTS RAW:", course.students);
-
-    // =========================
-    // RESPONSE
-    // =========================
     return res.status(200).json({
       success: true,
       courseId: course._id,
@@ -191,8 +182,6 @@ console.log("STUDENTS RAW:", course.students);
     });
   }
 };
-
-
 
 // ===============================
 // PREVIEW COURSE
@@ -213,8 +202,6 @@ exports.previewCourse = async (req, res) => {
   }
 };
 
-
-
 // ===============================
 // GET COURSES
 // ===============================
@@ -223,16 +210,16 @@ exports.getCourses = async (req, res) => {
     let courses;
 
     if (req.user.role === "teacher") {
-  courses = await Course.find({ teacher: req.user._id })
-    .populate("teacher", "name email")
-    .lean();
-   }
+      courses = await Course.find({ teacher: req.user._id })
+        .populate("teacher", "name email")
+        .lean();
+    }
     else {
       courses = await Course.find({
         "students.user": req.user._id,
       })
       .populate("teacher", "name email")
-      .lean(); // ✅ IMPORTANT
+      .lean();
     }
 
     const formatted = courses.map((course) => {
@@ -242,16 +229,16 @@ exports.getCourses = async (req, res) => {
 
       return {
         _id: course._id,
-      title: course.title,
-      courseCode: course.courseCode,
-      creditHours: course.creditHours,
-      syllabus: course.syllabus,
-      books: course.books,
-      joinLink: `${req.protocol}://${req.get("host")}/api/courses/join/${course.joinCode}`,
-      semester: course.semester, // ✅ FIXED
-      joinCode: course.joinCode,
-      teacher: course.teacher,
-      progress: student?.progress ?? 0,
+        title: course.title,
+        courseCode: course.courseCode,
+        creditHours: course.creditHours,
+        syllabus: course.syllabus,
+        books: course.books,
+        joinLink: `${req.protocol}://${req.get("host")}/api/courses/join/${course.joinCode}`,
+        semester: course.semester,
+        joinCode: course.joinCode,
+        teacher: course.teacher,
+        progress: student?.progress ?? 0,
       };
     });
 
@@ -284,28 +271,27 @@ exports.getCourseById = async (req, res) => {
     }
 
     const student = course.students?.find(
-  (s) => s.user && s.user.toString() === req.user._id.toString()
-);
+      (s) => s.user && s.user.toString() === req.user._id.toString()
+    );
 
-   res.json({
-  _id: course._id,
-  title: course.title,
-  courseCode: course.courseCode,
-  creditHours: course.creditHours,
-  syllabus: course.syllabus,
-  books: course.books,
-  joinLink: `${req.protocol}://${req.get("host")}/api/courses/join/${course.joinCode}`,
-  semester: course.semester,
-  joinCode: course.joinCode,
-  teacher: course.teacher,
-  progress: student ? student.progress : 0,
-});
+    res.json({
+      _id: course._id,
+      title: course.title,
+      courseCode: course.courseCode,
+      creditHours: course.creditHours,
+      syllabus: course.syllabus,
+      books: course.books,
+      joinLink: `${req.protocol}://${req.get("host")}/api/courses/join/${course.joinCode}`,
+      semester: course.semester,
+      joinCode: course.joinCode,
+      teacher: course.teacher,
+      progress: student ? student.progress : 0,
+    });
 
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
-
 
 // ===============================
 // UPDATE COURSE
@@ -333,8 +319,6 @@ exports.updateCourse = async (req, res) => {
   }
 };
 
-
-
 // ===============================
 // DELETE COURSE
 // ===============================
@@ -347,6 +331,25 @@ exports.deleteCourse = async (req, res) => {
 
     if (!course) {
       return res.status(404).json({ message: "Course not found" });
+    }
+
+    // 🔥 REAL-TIME UNIVERSAL NOTIFICATION: Alert students before deleting the course
+    try {
+      const studentIds = course.students.map(s => s.user.toString());
+      if (studentIds.length > 0) {
+        const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
+        const fcmTokens = users.map(u => u.fcmToken).filter(token => token && token.trim() !== "");
+
+        req.sendUniversalNotification({
+          courseId: course._id, // Broadcast room alert
+          title: "Course Deleted ⚠️",
+          message: `The instructor has permanently deleted the course "${course.title}".`,
+          type: "course_deleted",
+          fcmTokens: fcmTokens // Push notification payload for Background sound triggers
+        });
+      }
+    } catch (notifyErr) {
+      console.log("Delete notification silently failed:", notifyErr.message);
     }
 
     await course.deleteOne();

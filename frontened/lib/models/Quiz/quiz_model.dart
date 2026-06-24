@@ -17,7 +17,7 @@ class Quiz {
   final bool? evaluatedByAI;
   final List<String>? scannedPaperUrls;
 
-  // 🔥 NEW MIT/CAMBRIDGE STANDARD SECURITIES FIELDS
+  // 🔥 STRICTLY TYPE-SAFE PARSING FOR DEADLINES
   final DateTime? openDateTime;
   final DateTime? deadlineDateTime;
 
@@ -42,7 +42,6 @@ class Quiz {
     this.deadlineDateTime,
   });
 
-  // 🔥 STRICT PARSER: Backend ki kisi bhi date ko null nahi hone dega
   static DateTime? _parseDate(dynamic val) {
     if (val == null) return null;
     if (val is String) {
@@ -71,7 +70,7 @@ class Quiz {
       selectedAnswers: json['answers'] ?? json['selectedAnswers'],
       evaluatedByAI: json['evaluatedByAI'] ?? false,
 
-      // 🔥 STRICT DATES ATTACHED
+      // 🔥 AUTO EXTRACTING FROM MONGO
       openDateTime: _parseDate(json['openDateTime']),
       deadlineDateTime: _parseDate(json['deadlineDateTime']),
 

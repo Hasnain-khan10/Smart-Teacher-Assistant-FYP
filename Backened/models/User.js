@@ -1,67 +1,50 @@
 const mongoose = require("mongoose");
 
-
 const userSchema = new mongoose.Schema(
   {
-    // =========================
-    // BASIC INFO
-    // =========================
-    
     name: {
       type: String,
       required: true,
       trim: true,
     },
-
     email: {
       type: String,
       required: true,
       unique: true,
       lowercase: true,
       trim: true,
-      index: true, // 🔥 BAS YEH EK LINE ADD KARNI HAI!
+      index: true,
     },
-
     password: {
       type: String,
       required: true,
     },
-
     role: {
       type: String,
       enum: ["teacher", "student"],
       required: true,
     },
-
-    // =========================
-// PROFILE IMAGE
-// =========================
-profileImage: {
-  type: String,
-  default: "",
-},
-
-    // =========================
-    // COMMON FIELDS
-    // =========================
+    profileImage: {
+      type: String,
+      default: "",
+    },
+    // 🔥 FIREBASE PUSH NOTIFICATION TOKEN FIELD (Snapchat/FB Style Background Push)
+    fcmToken: {
+      type: String,
+      default: "",
+    },
     fatherName: {
       type: String,
       trim: true,
     },
-
     cnic: {
       type: String,
       trim: true,
     },
-
     department: {
       type: String,
       trim: true,
     },
-
-    // =========================
-    // 👨‍🎓 STUDENT FIELDS
-    // =========================
     rollNumber: {
       type: String,
       trim: true,
@@ -69,7 +52,6 @@ profileImage: {
         return this.role === "student";
       },
     },
-
     semester: {
       type: String,
       trim: true,
@@ -77,7 +59,6 @@ profileImage: {
         return this.role === "student";
       },
     },
-
     section: {
       type: String,
       trim: true,
@@ -85,10 +66,6 @@ profileImage: {
         return this.role === "student";
       },
     },
-
-    // =========================
-    // 👨‍🏫 TEACHER FIELDS
-    // =========================
     qualification: {
       type: String,
       trim: true,
@@ -96,7 +73,6 @@ profileImage: {
         return this.role === "teacher";
       },
     },
-
     experience: {
       type: String,
       trim: true,
@@ -104,7 +80,6 @@ profileImage: {
         return this.role === "teacher";
       },
     },
-
     speciality: {
       type: String,
       trim: true,
@@ -112,13 +87,8 @@ profileImage: {
         return this.role === "teacher";
       },
     },
-
-    // =========================
-    // RESET PASSWORD
-    // =========================
     resetOTP: { type: String },
     resetOTPExpiry: { type: Date },
-    
   },
   {
     timestamps: true,
