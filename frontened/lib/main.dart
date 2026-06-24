@@ -31,14 +31,12 @@ import 'package:frontened/screens/Teacher/TeacherPlaceholderScreen.dart';
 import 'package:frontened/services/storage_service.dart';
 import 'package:provider/provider.dart';
 
-// 🔥 BACKGROUND NOTIFICATION HANDLER
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   debugPrint("Handling a background message: ${message.messageId}");
 }
 
-// 🔥 NOTIFICATION CHANNELS INITIALIZATION
 late AndroidNotificationChannel channel;
 late FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin;
 
@@ -51,45 +49,51 @@ void main() async {
     await Firebase.initializeApp();
   }
 
-  // Set background messaging handler safely
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // Configure Local Notifications for Foreground Channels
   flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
-  // 🔥 CUSTOM HIGH IMPORTANCE OVERLAY SOUND CHANNEL REGISTERED
+  const AndroidInitializationSettings initializationSettingsAndroid =
+  AndroidInitializationSettings('@mipmap/ic_launcher');
+
+  const InitializationSettings initializationSettings = InitializationSettings(
+    android: initializationSettingsAndroid,
+  );
+
+  // 🔥 FIXED: Compiler error solved by using 'settings:' parameter
+  await flutterLocalNotificationsPlugin.initialize(
+    settings: initializationSettings,
+  );
+
   channel = const AndroidNotificationChannel(
     'smart_teacher_channel',
     'High Importance Notifications',
     description: 'This channel is used for academic alerts.',
-    importance: Importance.max, // Explicitly max to show heads-up banner
+    importance: Importance.max,
     playSound: true,
-    sound: RawResourceAndroidNotificationSound('smart_sound'), // Audio mapping reference
+    sound: RawResourceAndroidNotificationSound('smart_sound'),
   );
 
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
-  // Request Notification Permissions from Device
   await FirebaseMessaging.instance.requestPermission(
     alert: true, badge: true, sound: true, provisional: false,
   );
 
-  // Foreground presentation options enabled explicitly
   await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
     alert: true, badge: true, sound: true,
   );
 
-  // Print device token for backend registration
   String? fcmToken = await FirebaseMessaging.instance.getToken();
   debugPrint("Device FCM Token: $fcmToken");
 
-  // Handle Foreground Messages
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
     RemoteNotification? notification = message.notification;
     AndroidNotification? android = message.notification?.android;
     if (notification != null && android != null) {
+      // 🔥 FIXED: Compiler error solved by using explicit named arguments
       flutterLocalNotificationsPlugin.show(
         id: notification.hashCode,
         title: notification.title,
@@ -102,7 +106,7 @@ void main() async {
             importance: Importance.max,
             priority: Priority.high,
             icon: '@mipmap/ic_launcher',
-            sound: const RawResourceAndroidNotificationSound('smart_sound'), // Real-time play asset hook
+            sound: const RawResourceAndroidNotificationSound('smart_sound'),
             playSound: true,
           ),
         ),
@@ -157,15 +161,10 @@ class SmartTeacherAssistantApp extends StatelessWidget {
         initialRoute: initialAppRoute,
         routes: {
           RoleSelectionScreen.routeName: (_) => const RoleSelectionScreen(),
-
           TeacherAuthScreen.routeName: (_) => const TeacherAuthScreen(),
           StudentAuthScreen.routeName: (_) => const StudentAuthScreen(),
-
-          // Dashboards
           MainScreen.routeName: (_) => const MainScreen(),
           TeacherDashboardScreen.teacherRouteName: (_) => const TeacherDashboardScreen(),
-
-          // Student Dashboard Routes
           '/student-home': (_) => const StudentHomeScreen(),
           '/join-course': (_) => const JoinCourseScreen(),
           '/courses': (_) => const CoursesScreen(),

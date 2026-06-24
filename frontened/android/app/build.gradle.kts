@@ -25,6 +25,9 @@ android {
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // 🔥 IS LINE KO AISE LIKHEIN (Kotlin DSL)
+        multiDexEnabled = true
     }
 
     buildTypes {
@@ -49,4 +52,5 @@ dependencies {
 
     // 🔥 FIXED: Version upgraded from 2.0.4 to 2.1.4 as required by the compiler
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    implementation("androidx.multidex:multidex:2.0.1")
 }

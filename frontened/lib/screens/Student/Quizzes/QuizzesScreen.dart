@@ -23,8 +23,6 @@ class QuizzesScreen extends StatefulWidget {
 class _QuizzesScreenState extends State<QuizzesScreen> {
   bool _isDownloading = false;
   int? _loadingQuizIndex;
-
-  // 🔥 REAL-TIME ENGINE: For live countdowns and auto-locking/unlocking
   Timer? _timer;
 
   @override
@@ -32,7 +30,7 @@ class _QuizzesScreenState extends State<QuizzesScreen> {
     super.initState();
     Future.microtask(() { context.read<QuizProvider>().fetchAllQuizzes(); });
 
-    // Updates UI every second to keep countdowns accurate
+    // 🔥 REAL-TIME TICKER: Updates UI every second so the 'Lock/Unlock' logic stays accurate
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -79,7 +77,6 @@ class _QuizzesScreenState extends State<QuizzesScreen> {
 
   bool _isCompletedSafe(dynamic quiz) => quiz.isCompleted == true;
 
-  // 🔥 SAFE PARSERS: To handle dynamic model structures before we update quiz_model.dart
   DateTime? _getSafeDate(dynamic rawDate) {
     if (rawDate == null) return null;
     if (rawDate is DateTime) return rawDate;
@@ -102,15 +99,11 @@ class _QuizzesScreenState extends State<QuizzesScreen> {
     final quizzes = provider.quizzes;
     final now = DateTime.now();
 
-    // 🔥 AUTOMATED FILTERING ENGINE
+    // 🔥 FILTERING ENGINE: Separates active exams from completed ones
     final upcoming = quizzes.where((q) {
-      if (_isCompletedSafe(q) || q.evaluatedByAI == true) return false; // Already done
-
+      if (_isCompletedSafe(q) || q.evaluatedByAI == true) return false;
       final deadline = _getSafeDate(q.deadlineDateTime);
-      if (deadline != null && now.isAfter(deadline)) {
-        // DEADLINE PASSED: Automatically terminate and vanish from dashboard
-        return false;
-      }
+      if (deadline != null && now.isAfter(deadline)) return false; // Hide expired
       return true;
     }).toList();
 
@@ -160,19 +153,20 @@ class _QuizzesScreenState extends State<QuizzesScreen> {
                       final openDate = _getSafeDate(q.openDateTime);
                       final deadline = _getSafeDate(q.deadlineDateTime);
 
+                      // 🔥 LOCK LOGIC: Locked if now is before openDate
                       final isLocked = openDate != null && now.isBefore(openDate);
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                            color: isLocked ? Colors.grey.shade50 : Colors.blue.shade50,
+                            color: isLocked ? Colors.grey.shade100 : Colors.blue.shade50,
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(color: isLocked ? Colors.grey.shade300 : Colors.blue.shade200, width: 1.5)
                         ),
                         child: Row(
                           children: [
-                            Icon(isLocked ? Icons.lock_clock : Icons.timer, color: isLocked ? Colors.grey : Colors.blue, size: 28),
+                            Icon(isLocked ? Icons.lock : Icons.timer, color: isLocked ? Colors.grey : Colors.blue, size: 28),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
@@ -180,10 +174,8 @@ class _QuizzesScreenState extends State<QuizzesScreen> {
                                 children: [
                                   Text(q.title ?? "Untitled Exam", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isLocked ? Colors.grey.shade700 : const Color(0xFF1E1B4B))),
                                   const SizedBox(height: 6),
-
-                                  // Live Countdown or Lock Timer
                                   if (isLocked)
-                                    Text("Unlocks at: ${DateFormat('dd MMM, hh:mm a').format(openDate)}", style: const TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.bold))
+                                    Text("Unlocks at: ${DateFormat('hh:mm a, dd MMM').format(openDate!)}", style: const TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.bold))
                                   else if (deadline != null)
                                     Text("Ends in: ${_formatDuration(deadline.difference(now))}", style: const TextStyle(fontSize: 12, color: Colors.red, fontWeight: FontWeight.bold))
                                   else
@@ -195,7 +187,7 @@ class _QuizzesScreenState extends State<QuizzesScreen> {
                             ElevatedButton(
                               onPressed: () {
                                 if (isLocked) {
-                                  _showMessage("Exam Locked! This exam will activate precisely at ${DateFormat('hh:mm a, dd MMM').format(openDate)}", isError: true);
+                                  _showMessage("Exam Locked! Opens at ${DateFormat('hh:mm a').format(openDate!)}", isError: true);
                                 } else {
                                   Navigator.pushNamed(context, '/quiz-attempt', arguments: q);
                                 }

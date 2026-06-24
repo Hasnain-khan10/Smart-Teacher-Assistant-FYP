@@ -60,9 +60,9 @@ class SocketService {
 
       const NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
 
-      // 🔥 FIXED PERMANENTLY: Converted positional arguments to explicitly named parameters
+      // 🔥 FIXED ERROR: Passed all values as explicit named arguments (`id:`, `title:`, etc.)
       await _localNotifications.show(
-        id: 999, // Static unique ID for transient overlay sound plays
+        id: 999,
         title: null,
         body: null,
         notificationDetails: platformDetails,
