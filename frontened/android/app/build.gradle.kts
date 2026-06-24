@@ -33,6 +33,9 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
+            // 🔥 Ye 2 lines code ko delete/break hone se rokengi
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
