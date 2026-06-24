@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frontened/Provider/auth_provider.dart';
 import 'package:frontened/Provider/course_provider.dart';
@@ -5,6 +6,7 @@ import 'package:frontened/Provider/quiz_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:frontened/screens/Student/Courses/JoinCourseScreen.dart';
 import 'package:frontened/screens/Student/Profile/ProfileScreen.dart';
+import 'package:intl/intl.dart';
 
 class StudentHomeScreen extends StatefulWidget {
   const StudentHomeScreen({super.key});
@@ -15,10 +17,22 @@ class StudentHomeScreen extends StatefulWidget {
 }
 
 class _StudentHomeScreenState extends State<StudentHomeScreen> {
+  Timer? _homeTimer;
+
   @override
   void initState() {
     super.initState();
     _loadData();
+
+    _homeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _homeTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -29,6 +43,27 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     ]);
   }
 
+  DateTime? _getSafeDate(dynamic quiz, String field) {
+    try {
+      dynamic raw = (quiz as dynamic).toJson()[field];
+      if (raw == null) return null;
+      if (raw is DateTime) return raw;
+      return DateTime.tryParse(raw.toString());
+    } catch (e) {
+      return null;
+    }
+  }
+
+  String _formatDuration(Duration d) {
+    if (d.isNegative) return "00:00:00";
+    String twoDigits(int n) => n.toString().padLeft(2, "0");
+    String days = d.inDays > 0 ? "${d.inDays}d " : "";
+    String hours = twoDigits(d.inHours.remainder(24));
+    String minutes = twoDigits(d.inMinutes.remainder(60));
+    String seconds = twoDigits(d.inSeconds.remainder(60));
+    return "$days$hours:$minutes:$seconds";
+  }
+
   @override
   Widget build(BuildContext context) {
     final quizProvider = context.watch<QuizProvider>();
@@ -36,11 +71,17 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     final student = authProvider.user;
     final courseProvider = context.watch<CourseProvider>();
     final courses = courseProvider.courses;
-    final pendingQuizzes = quizProvider.quizzes.where((q) => q.isCompleted != true).toList();
+    final now = DateTime.now();
+
+    final pendingQuizzes = quizProvider.quizzes.where((q) {
+      if (q.isCompleted == true) return false;
+      final deadline = _getSafeDate(q, 'deadlineDateTime');
+      if (deadline != null && now.isAfter(deadline)) return false;
+      return true;
+    }).toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      // Plus button green wave design remains same
       floatingActionButton: FloatingActionButton(
         onPressed: () => Navigator.pushNamed(context, JoinCourseScreen.routeName).then((_) => _loadData()),
         backgroundColor: const Color(0xFF16A34A),
@@ -51,11 +92,11 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
           onRefresh: _loadData,
           color: const Color(0xFF4F46E5),
           child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 🔥 TOP HEADER: Profile on Top-Left
                 Row(
                   children: [
                     GestureDetector(
@@ -79,7 +120,6 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                 ),
                 const SizedBox(height: 30),
 
-                // 🔥 ENROLLED COURSES SECTION
                 const Text("Enrolled Courses", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
                 const SizedBox(height: 15),
                 if (courseProvider.isLoading)
@@ -119,8 +159,6 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                   ),
 
                 const SizedBox(height: 35),
-
-                // 🔥 PENDING QUIZZES SECTION
                 const Text("Pending Quizzes", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
                 const SizedBox(height: 12),
                 if (quizProvider.isLoading)
@@ -128,17 +166,63 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                 else if (pendingQuizzes.isEmpty)
                   const Text("No pending quizzes.", style: TextStyle(color: Colors.grey))
                 else
-                  ...pendingQuizzes.map((quiz) => Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(15),
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.red.shade100)),
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(quiz.title ?? "Quiz", style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: const Text("Due Soon", style: TextStyle(color: Colors.red, fontSize: 12)),
-                      trailing: const Icon(Icons.assignment_late_outlined, color: Colors.red),
-                    ),
-                  )),
+                  ...pendingQuizzes.map((quiz) {
+                    final openDate = _getSafeDate(quiz, 'openDateTime');
+                    final deadline = _getSafeDate(quiz, 'deadlineDateTime');
+                    final isLocked = openDate != null && now.isBefore(openDate);
+
+                    return GestureDetector(
+                      onTap: () {
+                        if (isLocked) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text("Exam Locked! This exam unlocks at ${DateFormat('hh:mm a, dd MMM').format(openDate)}"),
+                                backgroundColor: Colors.redAccent,
+                                behavior: SnackBarBehavior.floating,
+                              )
+                          );
+                        } else {
+                          Navigator.pushNamed(context, '/quiz-attempt', arguments: quiz);
+                        }
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: isLocked ? Colors.grey.withOpacity(0.08) : Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: isLocked ? Colors.grey.shade300 : Colors.red.shade100, width: 1.5),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(isLocked ? Icons.lock : Icons.assignment_late_outlined, color: isLocked ? Colors.grey : Colors.red, size: 24),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                      quiz.title ?? "Quiz",
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(fontWeight: FontWeight.bold, color: isLocked ? Colors.grey : const Color(0xFF1E1B4B))
+                                  ),
+                                  const SizedBox(height: 4),
+                                  if (isLocked)
+                                    Text("Unlocks: ${DateFormat('dd MMM, hh:mm a').format(openDate!)}", style: const TextStyle(color: Colors.orange, fontSize: 11, fontWeight: FontWeight.bold))
+                                  else if (deadline != null)
+                                    Text("Ends in: ${_formatDuration(deadline.difference(now))}", style: const TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold))
+                                  else
+                                    const Text("Active Now", style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                            Icon(isLocked ? Icons.lock_outline : Icons.chevron_right, color: isLocked ? Colors.grey : Colors.red, size: 20),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
               ],
             ),
           ),

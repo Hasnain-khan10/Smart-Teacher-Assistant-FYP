@@ -30,7 +30,7 @@ class _QuizzesScreenState extends State<QuizzesScreen> {
     super.initState();
     Future.microtask(() { context.read<QuizProvider>().fetchAllQuizzes(); });
 
-    // 🔥 REAL-TIME TICKER: Updates UI every second so the 'Lock/Unlock' logic stays accurate
+    // 🔥 REAL-TIME TICKER: Keep countdown and live lock check perfectly updated
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -44,26 +44,12 @@ class _QuizzesScreenState extends State<QuizzesScreen> {
 
   Future<void> _refresh() async { await context.read<QuizProvider>().fetchAllQuizzes(); }
 
-  Future<void> _generateAndOpenPdf(dynamic quiz, int index) async {
-    try {
-      setState(() { _isDownloading = true; _loadingQuizIndex = index; });
-      final provider = Provider.of<QuizProvider>(context, listen: false);
-      final pdfUrl = await provider.generateQuestionQuizPDF(quiz.id, quizId: quiz.id, courseId: quiz.course, title: quiz.title);
-      if (pdfUrl == null) { _showMessage("Failed to generate PDF", isError: true); return; }
-      final response = await http.get(Uri.parse(pdfUrl));
-      if (response.statusCode != 200) { _showMessage("Failed to download PDF", isError: true); return; }
-      final dir = await getTemporaryDirectory();
-      final filePath = "${dir.path}/${quiz.title}.pdf";
-      final file = File(filePath);
-      await file.writeAsBytes(response.bodyBytes);
-      await OpenFile.open(file.path);
-      _showMessage("PDF opened successfully");
-    } catch (e) { _showMessage(e.toString(), isError: true); }
-    finally { setState(() { _isDownloading = false; _loadingQuizIndex = null; }); }
-  }
-
   void _showMessage(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: isError ? Colors.redAccent : AppColors.primary, behavior: SnackBarBehavior.floating));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.redAccent : AppColors.primary,
+        behavior: SnackBarBehavior.floating
+    ));
   }
 
   List _sortByCreatedAt(List quizzes) {
@@ -99,12 +85,10 @@ class _QuizzesScreenState extends State<QuizzesScreen> {
     final quizzes = provider.quizzes;
     final now = DateTime.now();
 
-    // 🔥 FILTERING ENGINE: Separates active exams from completed ones
+    // 🔥 FILTERING ENGINE: Separate active/upcoming from completed/expired
     final upcoming = quizzes.where((q) {
       if (_isCompletedSafe(q) || q.evaluatedByAI == true) return false;
-      final deadline = _getSafeDate(q.deadlineDateTime);
-      if (deadline != null && now.isAfter(deadline)) return false; // Hide expired
-      return true;
+      return true; // Keep all scheduled/active quizzes in this list to show their locks/expired state
     }).toList();
 
     final attempted = quizzes.where((q) => _isCompletedSafe(q) || q.evaluatedByAI == true).toList();
@@ -137,10 +121,10 @@ class _QuizzesScreenState extends State<QuizzesScreen> {
             ),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.all(20.0),
+                padding: const EdgeInsets.all(16.0),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   const Text("Scheduled & Active Exams", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   if (upcoming.isEmpty)
                     Container(
                       width: double.infinity,
@@ -153,53 +137,138 @@ class _QuizzesScreenState extends State<QuizzesScreen> {
                       final openDate = _getSafeDate(q.openDateTime);
                       final deadline = _getSafeDate(q.deadlineDateTime);
 
-                      // 🔥 LOCK LOGIC: Locked if now is before openDate
-                      final isLocked = openDate != null && now.isBefore(openDate);
+                      // 🔥 STRICT TIME ENGINE EVALUATION
+                      final bool isNotStartedYet = openDate != null && now.isBefore(openDate);
+                      final bool isClosedAlready = deadline != null && now.isAfter(deadline);
+                      final bool isWorkingActive = !isNotStartedYet && !isClosedAlready;
 
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                            color: isLocked ? Colors.grey.shade100 : Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: isLocked ? Colors.grey.shade300 : Colors.blue.shade200, width: 1.5)
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(isLocked ? Icons.lock : Icons.timer, color: isLocked ? Colors.grey : Colors.blue, size: 28),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(q.title ?? "Untitled Exam", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isLocked ? Colors.grey.shade700 : const Color(0xFF1E1B4B))),
-                                  const SizedBox(height: 6),
-                                  if (isLocked)
-                                    Text("Unlocks at: ${DateFormat('hh:mm a, dd MMM').format(openDate!)}", style: const TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.bold))
-                                  else if (deadline != null)
-                                    Text("Ends in: ${_formatDuration(deadline.difference(now))}", style: const TextStyle(fontSize: 12, color: Colors.red, fontWeight: FontWeight.bold))
-                                  else
-                                    const Text("Active Now", style: TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.bold))
+                      Color statusColor = Colors.green;
+                      String statusText = "ACTIVE";
+                      IconData statusIcon = Icons.play_circle_filled;
+                      Color cardBg = Colors.white;
+
+                      if (isNotStartedYet) {
+                        statusColor = Colors.orange;
+                        statusText = "LOCKED";
+                        statusIcon = Icons.lock;
+                        cardBg = const Color(0xFFFAFAFA);
+                      } else if (isClosedAlready) {
+                        statusColor = Colors.redAccent;
+                        statusText = "CLOSED";
+                        statusIcon = Icons.block;
+                        cardBg = const Color(0xFFF5F5F5);
+                      }
+
+                      return InkWell(
+                        onTap: () {
+                          // 🔥 FULL ENTIRE QUIZ CARD CLICK BLOCK INJECTION
+                          if (isNotStartedYet) {
+                            _showMessage("This examination has not started yet! Unlocks at ${DateFormat('hh:mm a, dd MMM').format(openDate)}", isError: true);
+                          } else if (isClosedAlready) {
+                            _showMessage("This examination is closed! Deadline passed.", isError: true);
+                          } else {
+                            Navigator.pushNamed(context, '/quiz-attempt', arguments: q);
+                          }
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 14),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                              color: cardBg,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 4))
+                              ],
+                              border: Border.all(
+                                  color: isWorkingActive ? AppColors.primary.withOpacity(0.3) : Colors.grey.shade300,
+                                  width: isWorkingActive ? 1.5 : 1.0
+                              )
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Top Header Badge layout inside card context
+                              Row(
+// 💡 FIX CODE: Isay change kar lein
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,                              children: [
+                                  Row(
+                                    children: [
+                                      Icon(statusIcon, color: statusColor, size: 18),
+                                      const SizedBox(width: 6),
+                                      Text(statusText, style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 0.5)),
+                                    ],
+                                  ),
+                                  if (isWorkingActive && deadline != null)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(6)),
+                                      child: Text(
+                                        "Ends in: ${_formatDuration(deadline.difference(now))}",
+                                        style: const TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
                                 ],
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            ElevatedButton(
-                              onPressed: () {
-                                if (isLocked) {
-                                  _showMessage("Exam Locked! Opens at ${DateFormat('hh:mm a').format(openDate!)}", isError: true);
-                                } else {
-                                  Navigator.pushNamed(context, '/quiz-attempt', arguments: q);
-                                }
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: isLocked ? Colors.grey.shade400 : const Color(0xFF4F46E5),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                elevation: isLocked ? 0 : 2,
+                              const SizedBox(height: 12),
+                              Text(
+                                  q.title ?? "Untitled Assessment Paper",
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: isClosedAlready ? Colors.grey : const Color(0xFF1E1B4B)
+                                  )
                               ),
-                              child: Text(isLocked ? "Locked" : "Attempt", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                            ),
-                          ],
+                              const SizedBox(height: 14),
+                              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                              const SizedBox(height: 12),
+
+                              // 🔥 METADATA GRID FOR TIME AND DATE RENDERING
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Row(
+                                          children: [
+                                            Icon(Icons.date_range, size: 12, color: Colors.grey),
+                                            SizedBox(width: 4),
+                                            Text("START TIME", style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold)),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          openDate != null ? DateFormat('hh:mm a, dd MMM').format(openDate) : "Immediate Start",
+                                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                                        )
+                                      ],
+                                    ),
+                                  ),
+                                  Container(width: 1, height: 25, color: Colors.grey.shade200),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Row(
+                                          children: [
+                                            Icon(Icons.gpp_maybe, size: 12, color: Colors.grey),
+                                            SizedBox(width: 4),
+                                            Text("DEADLINE TIME", style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold)),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          deadline != null ? DateFormat('hh:mm a, dd MMM').format(deadline) : "No Deadline Set",
+                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isClosedAlready ? Colors.red.shade400 : const Color(0xFF475569)),
+                                        )
+                                      ],
+                                    ),
+                                  )
+                                ],
+                              )
+                            ],
+                          ),
                         ),
                       );
                     }),

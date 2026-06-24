@@ -1,5 +1,8 @@
 const Course = require("../models/Course");
-const User = require("../models/User"); // Added User model to fetch FCM tokens for targeted background alerts
+const User = require("../models/User");
+
+// 🔥 IMPORT GLOBAL CENTRAL NOTIFICATION ENGINE
+const NotificationService = require("../services/notificationService");
 
 // ===============================
 // CREATE COURSE
@@ -95,22 +98,21 @@ exports.joinCourse = async (req, res) => {
 
     await course.save();
 
-    // 🔥 REAL-TIME UNIVERSAL NOTIFICATION: Alert the teacher that a new student joined
+    // 🔥 FIXED: CONNECTED GLOBAL ENGINE FOR STUDENT JOIN ALERTS (TARGETING TEACHER DEVICE)
     try {
       const teacher = await User.findById(course.teacher).lean();
       const student = await User.findById(req.user._id).lean();
 
-      if (teacher && teacher.fcmToken) {
-        req.sendUniversalNotification({
-          courseId: course._id,
-          title: "New Student Enrolled 🎓",
-          message: `${student.name} has joined your course "${course.title}".`,
-          type: "course",
-          fcmTokens: [teacher.fcmToken]
-        });
+      if (teacher && teacher.fcmToken && teacher.fcmToken.trim() !== "") {
+        await NotificationService.sendPushNotification(
+          teacher.fcmToken,
+          "New Student Enrolled 🎓",
+          `${student.name || "A student"} has joined your course "${course.title}".`,
+          { courseId: course._id.toString(), type: "course" }
+        );
       }
     } catch (notifyErr) {
-      console.log("Teacher notification silently failed:", notifyErr.message);
+      console.log("Teacher student enrollment notification engine failed:", notifyErr.message);
     }
 
     res.status(200).json({
@@ -333,27 +335,28 @@ exports.deleteCourse = async (req, res) => {
       return res.status(404).json({ message: "Course not found" });
     }
 
-    // 🔥 REAL-TIME UNIVERSAL NOTIFICATION: Alert students before deleting the course
+    // 🔥 FIXED: CONNECTED GLOBAL ENGINE FOR BROADCSTED COURSE DELETION PUSH POPUPS
     try {
       const studentIds = course.students.map(s => s.user.toString());
       if (studentIds.length > 0) {
         const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
-        const fcmTokens = users.map(u => u.fcmToken).filter(token => token && token.trim() !== "");
 
-        req.sendUniversalNotification({
-          courseId: course._id, // Broadcast room alert
-          title: "Course Deleted ⚠️",
-          message: `The instructor has permanently deleted the course "${course.title}".`,
-          type: "course_deleted",
-          fcmTokens: fcmTokens // Push notification payload for Background sound triggers
-        });
+        for (const user of users) {
+          if (user.fcmToken && user.fcmToken.trim() !== "") {
+            await NotificationService.sendPushNotification(
+              user.fcmToken,
+              "Course Deleted ⚠️",
+              `The instructor has permanently removed/deleted the course "${course.title}".`,
+              { courseId: course._id.toString(), type: "course_deleted" }
+            );
+          }
+        }
       }
     } catch (notifyErr) {
-      console.log("Delete notification silently failed:", notifyErr.message);
+      console.log("Delete course notification engine error:", notifyErr.message);
     }
 
     await course.deleteOne();
-
     res.json({ message: "Deleted successfully" });
   } catch (error) {
     res.status(500).json({ error: error.message });

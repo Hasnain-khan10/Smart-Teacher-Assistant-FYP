@@ -10,11 +10,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontened/screens/Student/Courses/JoinCourseScreen.dart';
 import 'package:frontened/screens/Student/Profile/ProfileScreen.dart';
 import 'package:frontened/services/socket_service.dart';
-import 'package:intl/intl.dart'; // 🔥 IMPORTED FOR DATE FORMATTING
+import 'package:intl/intl.dart';
 
 class MainScreen extends StatefulWidget {
   static const String routeName = '/student-placeholder';
-
   const MainScreen({super.key});
 
   @override
@@ -23,8 +22,6 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   List<Map<String, String>> _deletedCourseAlerts = [];
-
-  // 🔥 REAL-TIME ENGINE: For live countdowns on dashboard
   Timer? _timer;
 
   @override
@@ -32,7 +29,7 @@ class _MainScreenState extends State<MainScreen> {
     super.initState();
     _loadData();
 
-    // Updates Dashboard every second to keep countdowns accurate
+    // 🔥 REAL-TIME TICKER: Forces instant layout evaluation for active locks
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -134,7 +131,6 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  // 🔥 SAFE PARSER FOR DATES (To prevent compilation errors before model update)
   DateTime? _getSafeDate(dynamic quiz, String field) {
     try {
       dynamic raw = (quiz as dynamic).toJson()[field];
@@ -142,7 +138,6 @@ class _MainScreenState extends State<MainScreen> {
       if (raw is DateTime) return raw;
       return DateTime.tryParse(raw.toString());
     } catch (e) {
-      // In case the field doesn't exist yet in the model
       return null;
     }
   }
@@ -156,14 +151,10 @@ class _MainScreenState extends State<MainScreen> {
     final courses = courseProvider.courses;
     final now = DateTime.now();
 
-    // 🔥 DASHBOARD AUTO-FILTERING RULE
     final pendingQuizzes = quizProvider.quizzes.where((q) {
       if (q.isCompleted == true) return false;
-
       final deadline = _getSafeDate(q, 'deadlineDateTime');
-      // DEADLINE PASSED: Remove completely from dashboard
-      if (deadline != null && now.isAfter(deadline)) return false;
-
+      if (deadline != null && now.isAfter(deadline)) return false; // Hide completely if closed already
       return true;
     }).toList();
 
@@ -223,7 +214,7 @@ class _MainScreenState extends State<MainScreen> {
                 ..._deletedCourseAlerts.map((delCourse) => Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.red.shade300, width: 1.5), boxShadow: [BoxShadow(color: Colors.red.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4))]),
+                  decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.red.shade300, width: 1.5)),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -235,7 +226,7 @@ class _MainScreenState extends State<MainScreen> {
                       const SizedBox(height: 12),
                       Align(
                         alignment: Alignment.centerRight,
-                        child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade600, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))), onPressed: () => _dismissDeletedCard(delCourse['id']!), child: const Text("OK, Got it", style: TextStyle(fontWeight: FontWeight.bold))),
+                        child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade600, foregroundColor: Colors.white, elevation: 0), onPressed: () => _dismissDeletedCard(delCourse['id']!), child: const Text("OK, Got it", style: TextStyle(fontWeight: FontWeight.bold))),
                       )
                     ],
                   ),
@@ -281,7 +272,6 @@ class _MainScreenState extends State<MainScreen> {
                   )),
 
                 const SizedBox(height: 30),
-
                 const Text("Pending Exams", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E1B4B))),
                 const SizedBox(height: 12),
 
@@ -304,7 +294,6 @@ class LiveQuizCard extends StatelessWidget {
   final Quiz quiz;
   const LiveQuizCard({super.key, required this.quiz});
 
-  // 🔥 SAFE PARSER INSIDE COMPONENT
   DateTime? _getSafeDate(dynamic rawQuiz, String field) {
     try {
       dynamic raw = (rawQuiz as dynamic).toJson()[field];
@@ -332,7 +321,6 @@ class LiveQuizCard extends StatelessWidget {
     final openDate = _getSafeDate(quiz, 'openDateTime');
     final deadline = _getSafeDate(quiz, 'deadlineDateTime');
 
-    // Check if current time is before the open time
     final isLocked = openDate != null && now.isBefore(openDate);
 
     return GestureDetector(

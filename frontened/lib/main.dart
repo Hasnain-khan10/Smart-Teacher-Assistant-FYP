@@ -31,10 +31,37 @@ import 'package:frontened/screens/Teacher/TeacherPlaceholderScreen.dart';
 import 'package:frontened/services/storage_service.dart';
 import 'package:provider/provider.dart';
 
+// 🔥 BACKGROUND NOTIFICATION HANDLER (Fixed Named Parameters)
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   debugPrint("Handling a background message: ${message.messageId}");
+
+  if (message.data.isNotEmpty) {
+    final title = message.data['title'] ?? message.notification?.title ?? "Academic Update";
+    final body = message.data['message'] ?? message.data['body'] ?? message.notification?.body ?? "";
+
+    final FlutterLocalNotificationsPlugin localPlugin = FlutterLocalNotificationsPlugin();
+
+    // 🔥 FIXED ERROR: Converted positional arguments into named parameters
+    await localPlugin.show(
+      id: message.hashCode,
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          'smart_teacher_channel',
+          'High Importance Notifications',
+          channelDescription: 'This channel is used for academic alerts.',
+          importance: Importance.max,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+          sound: const RawResourceAndroidNotificationSound('smart_sound'),
+          playSound: true,
+        ),
+      ),
+    );
+  }
 }
 
 late AndroidNotificationChannel channel;
@@ -60,7 +87,6 @@ void main() async {
     android: initializationSettingsAndroid,
   );
 
-  // 🔥 FIXED: Compiler error solved by using 'settings:' parameter
   await flutterLocalNotificationsPlugin.initialize(
     settings: initializationSettings,
   );
@@ -90,14 +116,14 @@ void main() async {
   debugPrint("Device FCM Token: $fcmToken");
 
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    RemoteNotification? notification = message.notification;
-    AndroidNotification? android = message.notification?.android;
-    if (notification != null && android != null) {
-      // 🔥 FIXED: Compiler error solved by using explicit named arguments
+    String? title = message.notification?.title ?? message.data['title'];
+    String? body = message.notification?.body ?? message.data['message'] ?? message.data['body'];
+
+    if (title != null || body != null) {
       flutterLocalNotificationsPlugin.show(
-        id: notification.hashCode,
-        title: notification.title,
-        body: notification.body,
+        id: message.hashCode,
+        title: title ?? "Academic Alert",
+        body: body ?? "New update available.",
         notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             channel.id,

@@ -2,10 +2,13 @@ const path = require("path");
 const fs = require("fs");
 const WeekPlan = require("../models/WeekPlan");
 const Course = require("../models/Course");
-const User = require("../models/User"); // 🔥 Required for Background Push Tokens
+const User = require("../models/User");
 const { generatePlanDocument } = require("../utils/planExportGenerator");
 const { callAI } = require("../services/aiService");
 const pdfParse = require("pdf-parse");
+
+// 🔥 IMPORT GLOBAL CENTRAL NOTIFICATION ENGINE
+const NotificationService = require("../services/notificationService");
 
 exports.createAIPlan = async (req, res) => {
   try {
@@ -28,7 +31,6 @@ exports.createAIPlan = async (req, res) => {
 
     let extractedText = "";
 
-    // 🔥 HIGH LIMIT PDF EXTRACTION
     if (req.file && req.file.mimetype === "application/pdf") {
       try {
           const dataBuffer = fs.readFileSync(req.file.path);
@@ -120,26 +122,28 @@ Return a single JSON object structured EXACTLY like this:
     const savedPlan = await newWeekPlan.save();
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
 
-    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE
+    // 🔥 FIXED: CONNECTED GLOBAL ENGINE FOR COMPLETE 18-WEEK AI GENERATION ALERTS
     try {
       if (finalCourseId && finalCourseId !== "UNKNOWN") {
         const courseData = await Course.findById(finalCourseId).lean();
         if (courseData && courseData.students && courseData.students.length > 0) {
           const studentIds = courseData.students.map(s => s.user.toString());
           const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
-          const fcmTokens = users.map(u => u.fcmToken).filter(t => t && t.trim() !== "");
 
-          req.sendUniversalNotification({
-            courseId: finalCourseId,
-            title: "New AI Curriculum Published 📚",
-            message: `A highly detailed AI-generated 18-week curriculum has been added to your course.`,
-            type: "plan",
-            fcmTokens: fcmTokens
-          });
+          for (const user of users) {
+            if (user.fcmToken && user.fcmToken.trim() !== "") {
+              await NotificationService.sendPushNotification(
+                user.fcmToken,
+                "New AI Curriculum Published 📚",
+                `A highly detailed AI-generated 18-week curriculum has been added to course ${courseData.title || ''}.`,
+                { courseId: finalCourseId.toString(), type: "plan" }
+              );
+            }
+          }
         }
       }
     } catch (notifyErr) {
-      console.log("AI Plan Notification failed:", notifyErr.message);
+      console.log("AI Plan global service engine failed:", notifyErr.message);
     }
 
     return res.status(200).json({

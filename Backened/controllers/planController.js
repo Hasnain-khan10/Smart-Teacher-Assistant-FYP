@@ -1,11 +1,14 @@
 const WeekPlan = require("../models/WeekPlan");
 const Course = require("../models/Course");
-const User = require("../models/User"); // 🔥 Required to get FCM Tokens for push alerts
+const User = require("../models/User");
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const pdfParse = require("pdf-parse");
 const Tesseract = require("tesseract.js");
 const { callAI } = require("../services/aiService");
+
+// 🔥 IMPORT GLOBAL CENTRAL NOTIFICATION ENGINE
+const NotificationService = require("../services/notificationService");
 
 // ===============================
 // CREATE WEEK PLAN (MANUAL)
@@ -42,23 +45,25 @@ exports.generatePlan = async (req, res) => {
       semesterDuration: semesterDuration || 18,
     });
 
-    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE: Notify students enrolled in this specific course
+    // 🔥 FIXED: CONNECTED GLOBAL ENGINE FOR MANUAL PLAN INITIALIZATION
     try {
       const studentIds = course.students.map(s => s.user.toString());
       if (studentIds.length > 0) {
         const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
-        const fcmTokens = users.map(u => u.fcmToken).filter(token => token && token.trim() !== "");
 
-        req.sendUniversalNotification({
-          courseId: course._id,
-          title: "New Week Plan Available 📚",
-          message: `Instructor ${req.user.name || "Teacher"} has published the weekly academic roadmap for ${course.title}.`,
-          type: "plan",
-          fcmTokens: fcmTokens
-        });
+        for (const user of users) {
+          if (user.fcmToken && user.fcmToken.trim() !== "") {
+            await NotificationService.sendPushNotification(
+              user.fcmToken,
+              "New Week Plan Available 📚",
+              `Instructor ${req.user.name || "Teacher"} has published the weekly academic roadmap for ${course.title}.`,
+              { courseId: course._id.toString(), type: "plan" }
+            );
+          }
+        }
       }
     } catch (notifyErr) {
-      console.log("Week Plan notification silently failed:", notifyErr.message);
+      console.log("Week Plan manual notification service error:", notifyErr.message);
     }
 
     return res.status(201).json({ success: true, message: "Week plan created successfully", plan });
@@ -89,7 +94,7 @@ exports.getPlanByCourse = async (req, res) => {
 };
 
 // ===============================
-// GENERATE SINGLE WEEK PDF (🔥 FIXED FOR NEW AI FIELDS)
+// GENERATE SINGLE WEEK PDF (FIXED FOR NEW AI FIELDS)
 // ===============================
 exports.generateWeekPDF = async (req, res) => {
   try {
@@ -121,7 +126,7 @@ exports.generateWeekPDF = async (req, res) => {
     doc.text(`Semester: ${plan.semesterDuration} Weeks`);
     doc.moveDown(2);
 
-    doc.fontSize(16).text(`Week ${week.weekNumber}: ${week.title}`, { underline: true });
+    doc.fontSize(16).text(`Week ${week.weekNumber}: ${week.title || "Topic"}`, { underline: true });
     doc.moveDown();
     doc.fontSize(12);
 
@@ -243,7 +248,6 @@ RETURN EXACTLY IN THIS JSON FORMAT:
 
     let aiResponse = await callAI({ prompt: aiPrompt });
     if (typeof aiResponse === "string") {
-      // 🔥 FIX: Clean unified replace regex without broken multi-line regex allocations
       aiResponse = aiResponse.replace(/```json/g, "").replace(/```/g, "").trim();
       aiResponse = JSON.parse(aiResponse);
     }
@@ -261,25 +265,27 @@ RETURN EXACTLY IN THIS JSON FORMAT:
 
     await plan.save();
 
-    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ALERTS
+    // 🔥 FIXED: CONNECTED GLOBAL ENGINE FOR INLINE WEEKLY PLAN OPTIMIZATION ALERTS
     try {
       if (course && course.students) {
         const studentIds = course.students.map(s => s.user.toString());
         if (studentIds.length > 0) {
           const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
-          const fcmTokens = users.map(u => u.fcmToken).filter(token => token && token.trim() !== "");
 
-          req.sendUniversalNotification({
-            courseId: courseId,
-            title: "Week Plan Material Evolved! ⚡",
-            message: `Topic configurations for Week ${weekNumber} have been dynamically enhanced by AI engine optimization layout.`,
-            type: "plan",
-            fcmTokens: fcmTokens
-          });
+          for (const user of users) {
+            if (user.fcmToken && user.fcmToken.trim() !== "") {
+              await NotificationService.sendPushNotification(
+                user.fcmToken,
+                "Week Plan Material Evolved! ⚡",
+                `Topic configurations for Week ${weekNumber} have been dynamically enhanced by AI engine optimization.`,
+                { courseId: courseId.toString(), type: "plan" }
+              );
+            }
+          }
         }
       }
     } catch (notifyErr) {
-      console.log("AI update notification silently failed:", notifyErr.message);
+      console.log("AI update plan layout notification failed:", notifyErr.message);
     }
 
     return res.json({ success: true, message: "Week updated using AI", week: plan.weeks[weekIndex] });
@@ -312,22 +318,11 @@ exports.deleteWeek = async (req, res) => {
   }
 };
 
-// ===============================
-// GENERATE AI PLAN FROM BOOK
-// ===============================
-exports.generateAIPlanFromBook = async (req, res) => {
-  res.status(200).json({ success: true, message: "Please use the newly updated AI endpoints." });
-};
+exports.generateAIPlanFromBook = async (req, res) => { res.status(200).json({ success: true, message: "Please use AI endpoints." }); };
+exports.generateAIPlan = async (req, res) => { res.status(200).json({ success: true, message: "Please use AI endpoints." }); };
 
 // ===============================
-// GENERATE AI 18 WEEK PLAN
-// ===============================
-exports.generateAIPlan = async (req, res) => {
-  res.status(200).json({ success: true, message: "Please use the newly updated AI endpoints." });
-};
-
-// ===============================
-// DOWNLOAD AI FULL PLAN PDF (🔥 FIXED FOR NEW AI FIELDS)
+// DOWNLOAD AI FULL PLAN PDF (FIXED FOR NEW AI FIELDS)
 // ===============================
 exports.downloadAIPlanPDF = async (req, res) => {
   try {

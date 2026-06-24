@@ -2,14 +2,16 @@ const path = require("path");
 const fs = require("fs");
 const Quiz = require("../models/Quiz");
 const Course = require("../models/Course");
-const User = require("../models/User"); // 🔥 Required for Background Push Tokens
+const User = require("../models/User");
 const { generateQuizPDF } = require("../utils/quizPdfGenerator");
 const { callAI } = require("../services/aiService");
 const pdfParse = require("pdf-parse");
 
+// 🔥 IMPORT GLOBAL CENTRAL NOTIFICATION ENGINE
+const NotificationService = require("../services/notificationService");
+
 exports.createAIQuestionQuiz = async (req, res) => {
   try {
-    // 🔥 AUTOMATED TIME-BASED PARSING ATTACHED
     let { courseId, topic, prompt, courseTitle, difficulty = "hard", shortCount = 0, longCount = 0, shortEachMark = 2, longEachMark = 5, type = "long", openDateTime, deadlineDateTime } = req.body;
 
     const finalCourseId = (courseId && courseId !== "UNKNOWN") ? courseId : null;
@@ -25,7 +27,6 @@ exports.createAIQuestionQuiz = async (req, res) => {
     const sEach = Number(shortEachMark) || 2;
     const lEach = Number(longEachMark) || 5;
 
-    // Save properly formatted Date objects
     let parsedOpenDate = openDateTime ? new Date(openDateTime) : new Date();
     let parsedDeadlineDate = deadlineDateTime ? new Date(deadlineDateTime) : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -93,26 +94,28 @@ ${formatRequirementText}`;
     await savedQuizModel.save();
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
 
-    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE
+    // 🔥 FIXED: CONNECTED GLOBAL NOTIFICATION ENGINE FOR AI GENERATED PAPERS
     try {
       if (finalCourseId && finalCourseId !== "UNKNOWN") {
         const courseData = await Course.findById(finalCourseId).lean();
         if (courseData && courseData.students && courseData.students.length > 0) {
           const studentIds = courseData.students.map(s => s.user.toString());
           const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
-          const fcmTokens = users.map(u => u.fcmToken).filter(t => t && t.trim() !== "");
 
-          req.sendUniversalNotification({
-            courseId: finalCourseId,
-            title: "AI Exam Scheduled! 🤖📝",
-            message: `An AI-generated written exam has been securely scheduled for your course. Check your dashboard for active timings.`,
-            type: "quiz",
-            fcmTokens: fcmTokens
-          });
+          for (const user of users) {
+            if (user.fcmToken && user.fcmToken.trim() !== "") {
+              await NotificationService.sendPushNotification(
+                user.fcmToken,
+                "AI Exam Scheduled! 🤖📝",
+                `An AI-generated written exam titled "${savedQuizModel.title}" has been securely scheduled for course ${courseData.title || ''}.`,
+                { courseId: finalCourseId.toString(), type: "quiz" }
+              );
+            }
+          }
         }
       }
     } catch (notifyErr) {
-      console.log("AI Quiz Notification failed:", notifyErr.message);
+      console.log("AI Quiz central notification deployment error:", notifyErr.message);
     }
 
     return res.status(200).json({

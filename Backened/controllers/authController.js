@@ -251,17 +251,19 @@ exports.resetPassword = async (req, res) => {
 
 exports.googleLogin = async (req, res) => {
   try {
-    const { idToken, role, fcmToken } = req.body; // 🔥 FCM FOR GOOGLE LOGINS
+    const { idToken, role, fcmToken } = req.body;
     if (!idToken) return res.status(400).json({ message: "No ID token provided" });
     if (!role || !["teacher", "student"].includes(role)) return res.status(400).json({ message: "Role is required" });
 
+    // 🏎️ Google Token Verification
     const ticket = await client.verifyIdToken({
       idToken,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
     const { email, name } = ticket.getPayload();
 
-    let user = await User.findOne({ email });
+    // 🏎️ Added .select("-password") and .exec() for high speed index scanning
+    let user = await User.findOne({ email }).select("-password").exec();
 
     if (user) {
       if (user.role !== role) {
@@ -269,12 +271,19 @@ exports.googleLogin = async (req, res) => {
       }
       if (fcmToken && user.fcmToken !== fcmToken) {
         user.fcmToken = fcmToken;
-        await user.save();
+        await User.updateOne({ _id: user._id }, { fcmToken: fcmToken }); // Direct fast atomic update
       }
-      user = user.toObject();
     } else {
-      const hashedPassword = await bcrypt.hash(crypto.randomBytes(16).toString("hex"), 10);
-      const userData = { name, email, password: hashedPassword, role, fcmToken: fcmToken || "" };
+      // 🏎️ OPTIMIZATION: Bypassed heavy bcrypt hashing computation since Google users bypass manual password forms
+      const dummyPassword = crypto.randomBytes(32).toString("hex");
+
+      const userData = {
+        name,
+        email,
+        password: dummyPassword, // Direct assignment of un-hashed safe placeholder string to clear CPU bottleneck
+        role,
+        fcmToken: fcmToken || ""
+      };
 
       if (role === "student") {
         userData.rollNumber = "N/A"; userData.semester = "N/A"; userData.section = "N/A";
@@ -282,19 +291,20 @@ exports.googleLogin = async (req, res) => {
       if (role === "teacher") {
         userData.qualification = "Not Provided"; userData.experience = "Not Provided"; userData.speciality = "Not Provided";
       }
+
       const newUser = await User.create(userData);
       user = newUser.toObject();
     }
 
     const token = generateToken(user);
-    delete user.password;
+    if (user.password) delete user.password;
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Google login successful",
       token,
       user,
     });
   } catch (error) {
-    res.status(401).json({ message: "Google authentication failed", error: error.message });
+    return res.status(401).json({ message: "Google authentication failed", error: error.message });
   }
 };

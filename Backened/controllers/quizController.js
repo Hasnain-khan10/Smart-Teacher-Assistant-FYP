@@ -1,12 +1,15 @@
 const Quiz = require("../models/Quiz");
 const Course = require("../models/Course");
 const Attempt = require("../models/Attempt");
-const User = require("../models/User"); // 🔥 Required to get FCM Tokens for push alerts
+const User = require("../models/User");
 const path = require("path");
 const { callAI } = require("../services/aiService");
 const { generateQuizPDF } = require("../utils/quizPdfGenerator");
 const fs = require("fs");
 const sharp = require("sharp");
+
+// 🔥 IMPORT GLOBAL CENTRAL NOTIFICATION ENGINE
+const NotificationService = require("../services/notificationService");
 
 exports.createQuiz = async (req, res) => {
   try {
@@ -35,23 +38,25 @@ exports.createQuiz = async (req, res) => {
       return res.status(400).json({ message: "Invalid quiz type" });
     }
 
-    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE (Socket + Native Push with Custom Sound)
+    // 🔥 FIXED: CONNECTED GLOBAL NOTIFICATION ENGINE FOR FULL BACKGROUND/KILL PUSH POPUP
     try {
       const studentIds = course.students.map(s => s.user.toString());
       if (studentIds.length > 0) {
         const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
-        const fcmTokens = users.map(u => u.fcmToken).filter(token => token && token.trim() !== "");
 
-        req.sendUniversalNotification({
-          courseId: course._id,
-          title: "New Exam Scheduled! 📝",
-          message: `An examination titled "${title}" has been scheduled. Check your dashboard for active timings.`,
-          type: "quiz",
-          fcmTokens: fcmTokens
-        });
+        for (const user of users) {
+          if (user.fcmToken && user.fcmToken.trim() !== "") {
+            await NotificationService.sendPushNotification(
+              user.fcmToken,
+              "New Exam Scheduled! 📝",
+              `An examination titled "${title}" has been scheduled for course ${course.title}. Check dashboard timings.`,
+              { courseId: course._id.toString(), type: "quiz" }
+            );
+          }
+        }
       }
     } catch (notifyErr) {
-      console.log("Quiz create notification silently failed:", notifyErr.message);
+      console.log("Quiz create notification engine error:", notifyErr.message);
     }
 
     return res.status(201).json({ message: "Quiz configured successfully", quiz });
@@ -211,25 +216,27 @@ exports.deleteQuiz = async (req, res) => {
     const quiz = await Quiz.findOne({ _id: quizId, teacher: req.user._id }).populate("course");
     if (!quiz) return res.status(404).json({ message: "Quiz not found" });
 
-    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE: Notify students before deleting
+    // 🔥 FIXED: CONNECTED GLOBAL NOTIFICATION ENGINE FOR EXAM DELETION
     try {
       if (quiz.course && quiz.course.students) {
         const studentIds = quiz.course.students.map(s => s.user.toString());
         if (studentIds.length > 0) {
           const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
-          const fcmTokens = users.map(u => u.fcmToken).filter(token => token && token.trim() !== "");
 
-          req.sendUniversalNotification({
-            courseId: quiz.course._id,
-            title: "Exam Deleted ⚠️",
-            message: `The instructor has cancelled/deleted the examination "${quiz.title}".`,
-            type: "quiz_deleted",
-            fcmTokens: fcmTokens
-          });
+          for (const user of users) {
+            if (user.fcmToken && user.fcmToken.trim() !== "") {
+              await NotificationService.sendPushNotification(
+                user.fcmToken,
+                "Exam Cancelled/Deleted ⚠️",
+                `The instructor has removed/cancelled the examination titled "${quiz.title}".`,
+                { courseId: quiz.course._id.toString(), type: "quiz_deleted" }
+              );
+            }
+          }
         }
       }
     } catch (notifyErr) {
-      console.log("Delete notification silently failed:", notifyErr.message);
+      console.log("Delete quiz notification engine error:", notifyErr.message);
     }
 
     await Attempt.deleteMany({ quiz: quizId });
@@ -260,25 +267,27 @@ exports.updateQuiz = async (req, res) => {
     quiz.totalMarks = total;
     await quiz.save();
 
-    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE
+    // 🔥 FIXED: CONNECTED GLOBAL NOTIFICATION ENGINE FOR EXAM UPDATE
     try {
       if (quiz.course && quiz.course.students) {
         const studentIds = quiz.course.students.map(s => s.user.toString());
         if (studentIds.length > 0) {
           const users = await User.find({ _id: { $in: studentIds } }).select("fcmToken").lean();
-          const fcmTokens = users.map(u => u.fcmToken).filter(token => token && token.trim() !== "");
 
-          req.sendUniversalNotification({
-            courseId: quiz.course._id,
-            title: "Exam Updated 🔄",
-            message: `"${quiz.title}" schedules or configurations have been updated by your instructor.`,
-            type: "quiz",
-            fcmTokens: fcmTokens
-          });
+          for (const user of users) {
+            if (user.fcmToken && user.fcmToken.trim() !== "") {
+              await NotificationService.sendPushNotification(
+                user.fcmToken,
+                "Exam Updated 🔄",
+                `The configurations/schedules for "${quiz.title}" have been updated by your instructor.`,
+                { courseId: quiz.course._id.toString(), type: "quiz" }
+              );
+            }
+          }
         }
       }
     } catch (notifyErr) {
-      console.log("Update notification silently failed:", notifyErr.message);
+      console.log("Update quiz notification engine error:", notifyErr.message);
     }
 
     res.json({ message: "Quiz updated successfully", quiz });
@@ -369,20 +378,19 @@ CRITICAL INSTRUCTION: Output STRICT JSON ONLY. No other text.
 
     for (const file of req.files) if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
 
-    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE: Notify ONLY the specific student
+    // 🔥 FIXED: CONNECTED GLOBAL ENGINE FOR INDIVIDUAL AI GRADING RESULT NOTIFICATION
     try {
       const specificStudent = await User.findById(studentId).select("fcmToken").lean();
-      if (specificStudent && specificStudent.fcmToken) {
-        req.sendUniversalNotification({
-          courseId: courseId,
-          title: "AI Auto-Grading Complete! 🤖",
-          message: `Your paper script for "${originalQuiz.title}" has been processed and graded by AI. Check your results dashboard context.`,
-          type: "result",
-          fcmTokens: [specificStudent.fcmToken] // 🎯 Direct hit to only this student's device
-        });
+      if (specificStudent && specificStudent.fcmToken && specificStudent.fcmToken.trim() !== "") {
+        await NotificationService.sendPushNotification(
+          specificStudent.fcmToken,
+          "AI Auto-Grading Complete! 🤖",
+          `Your paper script for "${originalQuiz.title}" has been processed and evaluated by AI. Check your dashboard.`,
+          { courseId: courseId.toString(), type: "result" }
+        );
       }
     } catch (notifyErr) {
-      console.log("AI Scan notification silently failed:", notifyErr.message);
+      console.log("AI Scan notification engine error:", notifyErr.message);
     }
 
     return res.status(200).json({ message: "Question Scanned Successfully", score: attempt.score });
@@ -409,22 +417,21 @@ exports.updateManualMarks = async (req, res) => {
     }
     await attempt.save();
 
-    // 🔥 UNIVERSAL REAL-TIME NOTIFICATION ENGINE: Notify ONLY the specific student
+    // 🔥 FIXED: CONNECTED GLOBAL ENGINE FOR TEACHER MARKS VERIFICATION NOTIFICATION
     try {
       if (attempt.quiz && attempt.student) {
         const specificStudent = await User.findById(attempt.student).select("fcmToken").lean();
-        if (specificStudent && specificStudent.fcmToken) {
-          req.sendUniversalNotification({
-            courseId: attempt.quiz.course,
-            title: "Marks Verified by Teacher 👨‍🏫",
-            message: `Instructor has updated/verified evaluation marks for your exam submission.`,
-            type: "result",
-            fcmTokens: [specificStudent.fcmToken] // 🎯 Direct hit to only this student's device
-          });
+        if (specificStudent && specificStudent.fcmToken && specificStudent.fcmToken.trim() !== "") {
+          await NotificationService.sendPushNotification(
+            specificStudent.fcmToken,
+            "Marks Verified by Teacher 👨‍🏫",
+            `Your instructor has verified/updated the evaluation marks for your exam "${attempt.quiz.title}".`,
+            { courseId: attempt.quiz.course.toString(), type: "result" }
+          );
         }
       }
     } catch (notifyErr) {
-      console.log("Manual Marks notification silently failed:", notifyErr.message);
+      console.log("Manual Marks notification engine error:", notifyErr.message);
     }
 
     return res.status(200).json({ message: "Marks updated successfully!", score: attempt.score });
