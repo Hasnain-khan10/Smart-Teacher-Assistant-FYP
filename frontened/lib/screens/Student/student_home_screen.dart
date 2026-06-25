@@ -4,6 +4,7 @@ import 'package:frontened/Provider/auth_provider.dart';
 import 'package:frontened/Provider/course_provider.dart';
 import 'package:frontened/Provider/quiz_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:frontened/models/Quiz/quiz_model.dart'; // 🔥 IMPORT CONFIRMED
 import 'package:frontened/screens/Student/Courses/JoinCourseScreen.dart';
 import 'package:frontened/screens/Student/Profile/ProfileScreen.dart';
 import 'package:intl/intl.dart';
@@ -43,17 +44,6 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     ]);
   }
 
-  DateTime? _getSafeDate(dynamic quiz, String field) {
-    try {
-      dynamic raw = (quiz as dynamic).toJson()[field];
-      if (raw == null) return null;
-      if (raw is DateTime) return raw;
-      return DateTime.tryParse(raw.toString());
-    } catch (e) {
-      return null;
-    }
-  }
-
   String _formatDuration(Duration d) {
     if (d.isNegative) return "00:00:00";
     String twoDigits(int n) => n.toString().padLeft(2, "0");
@@ -75,7 +65,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
 
     final pendingQuizzes = quizProvider.quizzes.where((q) {
       if (q.isCompleted == true) return false;
-      final deadline = _getSafeDate(q, 'deadlineDateTime');
+      final deadline = q.deadlineDateTime; // 🔥 DIRECT ACCESS FIXED
       if (deadline != null && now.isAfter(deadline)) return false;
       return true;
     }).toList();
@@ -167,8 +157,8 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                   const Text("No pending quizzes.", style: TextStyle(color: Colors.grey))
                 else
                   ...pendingQuizzes.map((quiz) {
-                    final openDate = _getSafeDate(quiz, 'openDateTime');
-                    final deadline = _getSafeDate(quiz, 'deadlineDateTime');
+                    final openDate = quiz.openDateTime;       // 🔥 DIRECT ACCESS
+                    final deadline = quiz.deadlineDateTime;   // 🔥 DIRECT ACCESS
                     final isLocked = openDate != null && now.isBefore(openDate);
 
                     return GestureDetector(
@@ -176,7 +166,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                         if (isLocked) {
                           ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text("Exam Locked! This exam unlocks at ${DateFormat('hh:mm a, dd MMM').format(openDate)}"),
+                                content: Text("Exam Locked! This exam unlocks at ${DateFormat('hh:mm a, dd MMM').format(openDate.toLocal())}"),
                                 backgroundColor: Colors.redAccent,
                                 behavior: SnackBarBehavior.floating,
                               )
@@ -187,15 +177,20 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                       },
                       child: Container(
                         margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
                           color: isLocked ? Colors.grey.withOpacity(0.08) : Colors.white,
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(15),
                           border: Border.all(color: isLocked ? Colors.grey.shade300 : Colors.red.shade100, width: 1.5),
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.01), blurRadius: 4)],
                         ),
                         child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(isLocked ? Icons.lock : Icons.assignment_late_outlined, color: isLocked ? Colors.grey : Colors.red, size: 24),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Icon(isLocked ? Icons.lock : Icons.assignment_late_outlined, color: isLocked ? Colors.grey : Colors.red, size: 24),
+                            ),
                             const SizedBox(width: 14),
                             Expanded(
                               child: Column(
@@ -205,19 +200,45 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                       quiz.title ?? "Quiz",
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(fontWeight: FontWeight.bold, color: isLocked ? Colors.grey : const Color(0xFF1E1B4B))
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isLocked ? Colors.grey : const Color(0xFF1E1B4B))
                                   ),
-                                  const SizedBox(height: 4),
-                                  if (isLocked)
-                                    Text("Unlocks: ${DateFormat('dd MMM, hh:mm a').format(openDate!)}", style: const TextStyle(color: Colors.orange, fontSize: 11, fontWeight: FontWeight.bold))
-                                  else if (deadline != null)
-                                    Text("Ends in: ${_formatDuration(deadline.difference(now))}", style: const TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold))
-                                  else
-                                    const Text("Active Now", style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 6),
+
+                                  Row(
+                                    children: [
+                                      Icon(Icons.date_range, size: 12, color: isLocked ? Colors.orange : Colors.grey),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        "Start: ${openDate != null ? DateFormat('dd MMM, hh:mm a').format(openDate.toLocal()) : 'Immediate'}",
+                                        style: TextStyle(color: isLocked ? Colors.orange.shade800 : Colors.grey.shade600, fontSize: 11, fontWeight: isLocked ? FontWeight.bold : FontWeight.normal),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 3),
+
+                                  Row(
+                                    children: [
+                                      Icon(Icons.alarm, size: 12, color: isLocked ? Colors.grey : Colors.red.shade300),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        "Deadline: ${deadline != null ? DateFormat('dd MMM, hh:mm a').format(deadline.toLocal()) : 'No Limit'}",
+                                        style: TextStyle(color: isLocked ? Colors.grey.shade600 : Colors.red.shade700, fontSize: 11, fontWeight: FontWeight.w500),
+                                      ),
+                                    ],
+                                  ),
+
+                                  if (!isLocked && deadline != null) ...[
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      "Ends in: ${_formatDuration(deadline.difference(now))}",
+                                      style: const TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold),
+                                    ),
+                                  ]
                                 ],
                               ),
                             ),
-                            Icon(isLocked ? Icons.lock_outline : Icons.chevron_right, color: isLocked ? Colors.grey : Colors.red, size: 20),
+                            const SizedBox(width: 5),
+                            Icon(isLocked ? Icons.lock_outline : Icons.chevron_right, color: isLocked ? Colors.grey : Colors.red, size: 22),
                           ],
                         ),
                       ),

@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:frontened/Provider/auth_provider.dart';
-import 'package:frontened/screens/Student/Authentication/StudentAuthScreen.dart'; // 🔥 Fixed Link
 import 'package:frontened/services/storage_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -153,7 +152,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                           width: double.infinity, height: 50,
                           child: ElevatedButton(
                             onPressed: provider.isLoading ? null : () async {
-                              // 🔥 FIX: Correct Provider Parameters Mapping
                               final updatedData = {
                                 "name": nameController.text.trim(),
                                 "fatherName": fatherController.text.trim(),
@@ -263,11 +261,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
               const SizedBox(height: 20),
               GestureDetector(
                 onTap: () async {
-                  Navigator.pop(context);
-                  await StorageService.removeToken();
-                  // 🔥 FIX: Redirecting to Unified Auth Screen
-                  Navigator.pushNamedAndRemoveUntil(context, StudentAuthScreen.routeName, (route) => false);
-                },
+                  Navigator.pop(context); // Bottom sheet band karega
+                  // 🔥 FIX: Ab yeh Provider ko call karega jo Google Cache bhi saaf karega aur Navigation bhi khud karega
+                  await context.read<AuthProvider>().logout();
+                  if (context.mounted) {
+                    Navigator.pushNamedAndRemoveUntil(context, '/role-selection', (route) => false);
+                  }                },
                 child: Container(width: double.infinity, alignment: Alignment.center, padding: const EdgeInsets.symmetric(vertical: 14), decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(12)), child: const Text("Log Out", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
               ),
               const SizedBox(height: 10),

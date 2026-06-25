@@ -29,7 +29,6 @@ class _MainScreenState extends State<MainScreen> {
     super.initState();
     _loadData();
 
-    // 🔥 REAL-TIME TICKER: Forces instant layout evaluation for active locks
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -131,17 +130,6 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  DateTime? _getSafeDate(dynamic quiz, String field) {
-    try {
-      dynamic raw = (quiz as dynamic).toJson()[field];
-      if (raw == null) return null;
-      if (raw is DateTime) return raw;
-      return DateTime.tryParse(raw.toString());
-    } catch (e) {
-      return null;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final quizProvider = context.watch<QuizProvider>();
@@ -153,8 +141,8 @@ class _MainScreenState extends State<MainScreen> {
 
     final pendingQuizzes = quizProvider.quizzes.where((q) {
       if (q.isCompleted == true) return false;
-      final deadline = _getSafeDate(q, 'deadlineDateTime');
-      if (deadline != null && now.isAfter(deadline)) return false; // Hide completely if closed already
+      final deadline = q.deadlineDateTime; // 🔥 DIRECT ACCESS FIXED
+      if (deadline != null && now.isAfter(deadline)) return false;
       return true;
     }).toList();
 
@@ -294,17 +282,6 @@ class LiveQuizCard extends StatelessWidget {
   final Quiz quiz;
   const LiveQuizCard({super.key, required this.quiz});
 
-  DateTime? _getSafeDate(dynamic rawQuiz, String field) {
-    try {
-      dynamic raw = (rawQuiz as dynamic).toJson()[field];
-      if (raw == null) return null;
-      if (raw is DateTime) return raw;
-      return DateTime.tryParse(raw.toString());
-    } catch (e) {
-      return null;
-    }
-  }
-
   String _formatDuration(Duration d) {
     if (d.isNegative) return "00:00:00";
     String twoDigits(int n) => n.toString().padLeft(2, "0");
@@ -318,8 +295,8 @@ class LiveQuizCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final openDate = _getSafeDate(quiz, 'openDateTime');
-    final deadline = _getSafeDate(quiz, 'deadlineDateTime');
+    final openDate = quiz.openDateTime;       // 🔥 FIXED: DIRECT FIELD READ
+    final deadline = quiz.deadlineDateTime;   // 🔥 FIXED: DIRECT FIELD READ
 
     final isLocked = openDate != null && now.isBefore(openDate);
 
@@ -328,7 +305,7 @@ class LiveQuizCard extends StatelessWidget {
         if (isLocked) {
           ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text("Exam Locked! This exam will activate precisely at ${DateFormat('hh:mm a, dd MMM').format(openDate)}"),
+                content: Text("Exam Locked! This exam will activate precisely at ${DateFormat('hh:mm a, dd MMM').format(openDate.toLocal())}"),
                 backgroundColor: Colors.redAccent,
                 behavior: SnackBarBehavior.floating,
               )
@@ -339,16 +316,21 @@ class LiveQuizCard extends StatelessWidget {
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 500),
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isLocked ? Colors.grey.withAlpha(20) : Colors.green.withAlpha(15),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: isLocked ? Colors.grey.withAlpha(100) : Colors.green.withAlpha(100), width: 1.5),
+          color: isLocked ? Colors.grey.withAlpha(15) : Colors.white,
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: isLocked ? Colors.grey.withAlpha(80) : Colors.green.withAlpha(100), width: 1.5),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4)],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(isLocked ? Icons.lock : Icons.play_circle_fill, color: isLocked ? Colors.grey : Colors.green, size: 24),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Icon(isLocked ? Icons.lock_outline : Icons.play_circle_fill, color: isLocked ? Colors.grey : Colors.green, size: 26),
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -358,19 +340,45 @@ class LiveQuizCard extends StatelessWidget {
                       quiz.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isLocked ? Colors.grey.shade700 : const Color(0xFF1E1B4B))
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: isLocked ? Colors.grey.shade700 : const Color(0xFF1E1B4B))
                   ),
-                  const SizedBox(height: 6),
-                  if (isLocked)
-                    Text("Unlocks at: ${DateFormat('dd MMM, hh:mm a').format(openDate)}", style: const TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.bold))
-                  else if (deadline != null)
-                    Text("Ends in: ${_formatDuration(deadline.difference(now))}", style: const TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold))
-                  else
-                    const Text("Active Now", style: TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                  const SizedBox(height: 8),
+
+                  Row(
+                    children: [
+                      Icon(Icons.calendar_today, size: 13, color: isLocked ? Colors.orange : Colors.grey),
+                      const SizedBox(width: 5),
+                      Text(
+                        "Start: ${openDate != null ? DateFormat('dd MMM, hh:mm a').format(openDate.toLocal()) : 'Immediate'}",
+                        style: TextStyle(color: isLocked ? Colors.orange.shade800 : Colors.grey.shade600, fontSize: 12, fontWeight: isLocked ? FontWeight.bold : FontWeight.normal),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+
+                  Row(
+                    children: [
+                      Icon(Icons.timer_outlined, size: 13, color: isLocked ? Colors.grey : Colors.red.shade400),
+                      const SizedBox(width: 5),
+                      Text(
+                        "Deadline: ${deadline != null ? DateFormat('dd MMM, hh:mm a').format(deadline.toLocal()) : 'No Limit'}",
+                        style: TextStyle(color: isLocked ? Colors.grey.shade600 : Colors.red.shade700, fontSize: 12, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+
+                  if (!isLocked && deadline != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      "Remaining: ${_formatDuration(deadline.difference(now))}",
+                      style: const TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.2),
+                    ),
+                  ]
                 ],
               ),
             ),
-            Icon(isLocked ? Icons.lock_clock : Icons.chevron_right, color: isLocked ? Colors.grey : Colors.green, size: 22),
+            const SizedBox(width: 10),
+            Icon(isLocked ? Icons.lock_clock : Icons.chevron_right, color: isLocked ? Colors.grey : Colors.green, size: 24),
           ],
         ),
       ),

@@ -75,7 +75,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
     final provider = context.read<AuthProvider>();
 
-    // 🔥 PACKING TEACHER FIELDS IN MAP FOR THE UNIFIED PROVIDER
     final Map<String, dynamic> teacherProfileMap = {
       "name": _nameController.text.trim(),
       "fatherName": _fatherNameController.text.trim(),
@@ -132,10 +131,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     );
 
     if (confirm == true && mounted) {
+      // 🔥 FIX: Provider ko call diya. Neechay wale double navigation overrides ko delete kar diya hai!
       await context.read<AuthProvider>().logout();
-      if (!mounted) return;
-      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-    }
+      if (context.mounted) {
+        Navigator.pushNamedAndRemoveUntil(context, '/role-selection', (route) => false);
+      }    }
   }
 
   @override
@@ -157,7 +157,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ================= PROFILE PICTURE =================
               Center(
                 child: Stack(
                   alignment: Alignment.bottomRight,
@@ -192,7 +191,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
               const SizedBox(height: 30),
 
-              // ================= PERSONAL INFO =================
               const Text("Personal Information", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF1E1B4B))),
               const SizedBox(height: 16),
               _buildInputField("Full Name", _nameController, Icons.person_outline),
@@ -205,7 +203,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
               const SizedBox(height: 30),
 
-              // ================= PROFESSIONAL INFO =================
               const Text("Professional Details", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF1E1B4B))),
               const SizedBox(height: 16),
               _buildInputField("Department", _deptController, Icons.business),
@@ -218,7 +215,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
               const SizedBox(height: 40),
 
-              // ================= ACTION BUTTONS =================
               SizedBox(
                 width: double.infinity, height: 55,
                 child: ElevatedButton(

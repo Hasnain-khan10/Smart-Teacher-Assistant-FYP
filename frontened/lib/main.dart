@@ -8,6 +8,7 @@ import 'package:frontened/Provider/pdf_provider.dart';
 import 'package:frontened/Provider/quiz_provider.dart';
 import 'package:frontened/Provider/week_plan_provider.dart';
 
+// 🔥 FIXED UNIFIED PATH: Super absolute mapping across app architecture
 import 'package:frontened/screens/RoleSelectionScreen.dart';
 
 // UNIFIED AUTH SCREENS
@@ -31,7 +32,7 @@ import 'package:frontened/screens/Teacher/TeacherPlaceholderScreen.dart';
 import 'package:frontened/services/storage_service.dart';
 import 'package:provider/provider.dart';
 
-// 🔥 BACKGROUND NOTIFICATION HANDLER (Fixed Named Parameters)
+// 🔥 BACKGROUND NOTIFICATION HANDLER
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
@@ -43,7 +44,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
     final FlutterLocalNotificationsPlugin localPlugin = FlutterLocalNotificationsPlugin();
 
-    // 🔥 FIXED ERROR: Converted positional arguments into named parameters
     await localPlugin.show(
       id: message.hashCode,
       title: title,
@@ -66,8 +66,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 late AndroidNotificationChannel channel;
 late FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin;
-
-String initialAppRoute = RoleSelectionScreen.routeName;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -147,28 +145,30 @@ void main() async {
 
   final token = await StorageService.getToken();
   final role = await StorageService.getRole();
+  String calculatedInitialRoute = RoleSelectionScreen.routeName;
 
   if (token != null && token.isNotEmpty) {
     if (role?.toLowerCase() == "student") {
-      initialAppRoute = MainScreen.routeName;
+      calculatedInitialRoute = MainScreen.routeName;
     } else if (role?.toLowerCase() == "teacher") {
-      initialAppRoute = TeacherDashboardScreen.teacherRouteName;
+      calculatedInitialRoute = TeacherDashboardScreen.teacherRouteName;
     }
   } else if (role != null && role.isNotEmpty) {
     if (role.toLowerCase() == "student") {
-      initialAppRoute = StudentAuthScreen.routeName;
+      calculatedInitialRoute = StudentAuthScreen.routeName;
     } else if (role.toLowerCase() == "teacher") {
-      initialAppRoute = TeacherAuthScreen.routeName;
+      calculatedInitialRoute = TeacherAuthScreen.routeName;
     }
   } else {
-    initialAppRoute = RoleSelectionScreen.routeName;
+    calculatedInitialRoute = RoleSelectionScreen.routeName;
   }
 
-  runApp(const SmartTeacherAssistantApp());
+  runApp(SmartTeacherAssistantApp(initialRoute: calculatedInitialRoute));
 }
 
 class SmartTeacherAssistantApp extends StatelessWidget {
-  const SmartTeacherAssistantApp({super.key});
+  final String initialRoute;
+  const SmartTeacherAssistantApp({super.key, required this.initialRoute});
 
   @override
   Widget build(BuildContext context) {
@@ -184,7 +184,7 @@ class SmartTeacherAssistantApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         title: 'Smart Teacher Assistant',
         theme: AppTheme.theme,
-        initialRoute: initialAppRoute,
+        initialRoute: initialRoute,
         routes: {
           RoleSelectionScreen.routeName: (_) => const RoleSelectionScreen(),
           TeacherAuthScreen.routeName: (_) => const TeacherAuthScreen(),

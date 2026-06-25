@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'package:google_sign_in/google_sign_in.dart'; // 🔥 GOOGLE SESSIONS FLUSHING KO IMPORT KAREIN
 import 'package:flutter/material.dart';
 import 'package:frontened/models/user_model.dart';
 import 'package:frontened/models/auth_models.dart';
 import 'package:frontened/services/auth_service.dart'; // ApiService alias
 import 'package:frontened/services/storage_service.dart';
+import 'package:frontened/screens/RoleSelectionScreen.dart'; // 🔥 FIXED: Exact path matched from your main.dart
 
 class AuthProvider with ChangeNotifier {
   UserModel? _user;
@@ -16,7 +18,7 @@ class AuthProvider with ChangeNotifier {
   bool get isAuthenticated => _user != null;
 
   void _setLoading(bool value) {
-    if (_isLoading == value) return; // 🔥 HIGH SPEED OPTIMIZATION: Prevents unnecessary heavy UI rebuilds
+    if (_isLoading == value) return; // 🔥 HIGH SPEED OPTIMIZATION
     _isLoading = value;
     notifyListeners();
   }
@@ -63,7 +65,6 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  // 🔥 HIGH SPEED OPTIMIZATION: Bypassed deep stack traces for Google Sign in to trigger Instant Dashboard Load
   Future<bool> googleLogin(String idToken, String role) async {
     _setLoading(true);
     _clearError();
@@ -161,9 +162,37 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  // 🔥 BULLETPROOF LOGOUT WITH FIXED RE-NAV ROUTE
+  // 🔥 FINAL BULLETPROOF LOGOUT (Wipes local storage + Flushes Google Cache Sessions)
+  // 🔥 100% CLEAN LOGOUT (Sirf data aur Google Cache saaf karega, navigation UI par chhor di hai)
   Future<void> logout() async {
-    await ApiService.logout();
+    _setLoading(true);
+    try {
+      await ApiService.logout();
+    } catch (e) {
+      debugPrint("Backend logout trace handled: $e");
+    }
+
+    try {
+      // Flush Google Account Session Cache explicitly
+      final GoogleSignIn googleSignIn = GoogleSignIn();
+      if (await googleSignIn.isSignedIn()) {
+        await googleSignIn.signOut();
+        await googleSignIn.disconnect();
+      }
+    } catch (googleErr) {
+      debugPrint("Google SignOut error caught: $googleErr");
+    }
+
+    try {
+      // Wipe local storage token, role, and login times completely
+      await StorageService.clearAll();
+    } catch (e) {
+      debugPrint("Local storage reset error: $e");
+    }
+
     _user = null;
-    notifyListeners();
+    _clearError();
+    _setLoading(false);
   }
 }
