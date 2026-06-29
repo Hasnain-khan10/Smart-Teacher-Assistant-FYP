@@ -3,13 +3,17 @@ const fs = require("fs");
 const Quiz = require("../models/Quiz");
 const Course = require("../models/Course");
 const { generateQuizPDF } = require("../utils/quizPdfGenerator");
-const { callAI } = require("../services/aiService"); // 🔥 Switched to Groq Service
+const { callAI } = require("../services/aiService");
 const pdfParse = require("pdf-parse");
 
 exports.createAIMCQQuiz = async (req, res) => {
   try {
-    let { courseId, topic, prompt, courseTitle, difficulty = "hard", questionCount, marksPerQuestion } = req.body;
+    // 🔒 STRICT GUARD: Prevent unauthorized AI API usage
+    if (!req.user || req.user.role !== "teacher") {
+      return res.status(403).json({ success: false, message: "Forbidden: AI Exam generation is restricted to instructors." });
+    }
 
+    let { courseId, topic, prompt, courseTitle, difficulty = "hard", questionCount, marksPerQuestion } = req.body;
     const finalCourseId = (courseId && courseId !== "UNKNOWN") ? courseId : null;
     let finalTopic = topic || prompt || courseTitle || "General Evaluation";
 
@@ -17,20 +21,11 @@ exports.createAIMCQQuiz = async (req, res) => {
         finalTopic = req.file ? "Evaluation strictly based on attached file" : "General Course Evaluation";
     }
 
-    let finalTeacherId = "6a2b27ef72643f1a4b2e7b2f";
-    if (req.user && req.user._id) {
-       finalTeacherId = req.user._id;
-    } else if (finalCourseId) {
-       const courseRecord = await Course.findById(finalCourseId);
-       if (courseRecord && courseRecord.teacher) finalTeacherId = courseRecord.teacher;
-    }
-
+    const finalTeacherId = req.user._id; // Secure context extraction
     const count = Number(questionCount) || 10;
     const perMark = Number(marksPerQuestion) || 1;
-
     let extractedText = "";
 
-    // 🔥 LIMIT INCREASED TO 25,000 CHARACTERS FOR GROQ
     if (req.file && req.file.mimetype === "application/pdf") {
       try {
           const dataBuffer = fs.readFileSync(req.file.path);
@@ -41,35 +36,18 @@ exports.createAIMCQQuiz = async (req, res) => {
       }
     }
 
-    // 🔥 HIGH-LEVEL UNIVERSITY PROMPT FOR MCQS
     const groqPrompt = `You are a Lead Examination Board Setter for a University.
 Create a highly analytical Multiple Choice Question (MCQ) exam.
-Topic: ${finalTopic}
-Difficulty: ${difficulty}
-Total MCQs: ${count}
+Topic: ${finalTopic}\nDifficulty: ${difficulty}\nTotal MCQs: ${count}
 ${extractedText ? `Reference Context Data:\n${extractedText}\n\n` : ''}
-
 STRICT RULES:
-1. Options must contain strong plausible distractors (tricky options).
-2. The explanation must clearly state WHY the correct option is right and others are wrong.
+1. Options must contain strong plausible distractors.
+2. The explanation must clearly state WHY the correct option is right.
 3. Return ONLY clean JSON.
-
 JSON Format Layout:
-{
-  "title": "Analytical MCQ Assessment: ${finalTopic}",
-  "description": "High-level cognitive evaluation paper.",
-  "questions": [
-    {
-      "question": "Deep analytical question text?",
-      "options": { "A": "Option A", "B": "Option B", "C": "Option C", "D": "Option D" },
-      "correctAnswer": "A",
-      "explanation": "Detailed rationale explaining the correct concept."
-    }
-  ]
-}`;
+{ "title": "Analytical MCQ Assessment: ${finalTopic}", "description": "High-level cognitive evaluation paper.", "questions": [ { "question": "Deep analytical question text?", "options": { "A": "Option A", "B": "Option B", "C": "Option C", "D": "Option D" }, "correctAnswer": "A", "explanation": "Detailed rationale explaining the correct concept." } ] }`;
 
-    // 🔥 CALL GROQ AI
-const aiData = await callAI({ prompt: groqPrompt, model: "llama-3.1-70b-versatile" });
+    const aiData = await callAI({ prompt: groqPrompt, model: "llama-3.1-70b-versatile" });
     if (!aiData || !aiData.questions) {
       return res.status(500).json({ success: false, message: "Invalid JSON structure from AI" });
     }
@@ -94,27 +72,21 @@ const aiData = await callAI({ prompt: groqPrompt, model: "llama-3.1-70b-versatil
     await generateQuizPDF(aiData, filePath);
 
     const dbQuiz = new Quiz({
-      course: finalCourseId,
-      teacher: finalTeacherId,
+      course: finalCourseId, teacher: finalTeacherId,
       title: aiData.title || `${finalTopic} Assessment`,
       description: aiData.description || "University Level MCQ Exam",
-      type: "mcq",
-      questions: formattedQuestions,
+      type: "mcq", questions: formattedQuestions,
       totalMarks: formattedQuestions.length * perMark,
-      marksPerQuestion: perMark,
-      examMeta: { type: "MCQ_EXAM", generatedBy: "GROQ_AI" }
+      marksPerQuestion: perMark, examMeta: { type: "MCQ_EXAM", generatedBy: "GROQ_AI" }
     });
 
     await dbQuiz.save();
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
 
     return res.status(200).json({
-      success: true,
-      message: "MCQ generated perfectly via Groq",
-      pdfUrl: `${req.protocol}://${req.get("host")}/uploads/${fileName}`,
-      quiz: dbQuiz
+      success: true, message: "MCQ generated perfectly via Groq",
+      pdfUrl: `${req.protocol}://${req.get("host")}/uploads/${fileName}`, quiz: dbQuiz
     });
-
   } catch (error) {
     console.error("AI Generation Error:", error.message);
     return res.status(500).json({ success: false, message: error.message });

@@ -4,9 +4,13 @@ const PptxGenJS = require("pptxgenjs");
 const cloudinary = require("../config/cloudinary");
 const fs = require("fs");
 
-
 exports.generateSlides = async (req, res) => {
   try {
+    // 🔒 SECURITY GUARD ADDED
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: "Unauthorized request block." });
+    }
+
     const { courseId, topic } = req.body;
 
     const course = await Course.findOne({
@@ -48,10 +52,13 @@ exports.generateSlides = async (req, res) => {
   }
 };
 
-
-
 exports.getSlidesByCourse = async (req, res) => {
   try {
+    // 🔒 SECURITY GUARD ADDED
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: "Unauthorized request block." });
+    }
+
     let slides;
 
     // 👨‍🏫 Teacher → only their slides
@@ -75,9 +82,13 @@ exports.getSlidesByCourse = async (req, res) => {
   }
 };
 
-
 exports.exportSlidesToPPT = async (req, res) => {
   try {
+    // 🔒 SECURITY GUARD ADDED
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: "Unauthorized request block." });
+    }
+
     const slideDoc = await Slide.findOne({
       _id: req.params.id,
       teacher: req.user._id,
@@ -131,10 +142,13 @@ exports.exportSlidesToPPT = async (req, res) => {
   }
 };
 
-
-
 exports.updateSlides = async (req, res) => {
   try {
+    // 🔒 SECURITY GUARD ADDED
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: "Unauthorized request block." });
+    }
+
     const slide = await Slide.findOne({
       _id: req.params.id,
       teacher: req.user._id,
@@ -157,9 +171,13 @@ exports.updateSlides = async (req, res) => {
   }
 };
 
-
 exports.deleteSlides = async (req, res) => {
   try {
+    // 🔒 SECURITY GUARD ADDED
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: "Unauthorized request block." });
+    }
+
     const slide = await Slide.findOne({
       _id: req.params.id,
       teacher: req.user._id,
@@ -176,6 +194,3 @@ exports.deleteSlides = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
-
-

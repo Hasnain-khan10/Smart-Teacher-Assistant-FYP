@@ -6,21 +6,20 @@ const User = require("../models/User");
 const { generateQuizPDF } = require("../utils/quizPdfGenerator");
 const { callAI } = require("../services/aiService");
 const pdfParse = require("pdf-parse");
-
-// 🔥 IMPORT GLOBAL CENTRAL NOTIFICATION ENGINE
 const NotificationService = require("../services/notificationService");
 
 exports.createAIQuestionQuiz = async (req, res) => {
   try {
+    // 🔒 STRICT GUARD
+    if (!req.user || req.user.role !== "teacher") {
+      return res.status(403).json({ success: false, message: "Forbidden: Unauthorized access to AI Assessor." });
+    }
+
     let { courseId, topic, prompt, courseTitle, difficulty = "hard", shortCount = 0, longCount = 0, shortEachMark = 2, longEachMark = 5, type = "long", openDateTime, deadlineDateTime } = req.body;
 
     const finalCourseId = (courseId && courseId !== "UNKNOWN") ? courseId : null;
     let finalTopic = topic || prompt || courseTitle || "General Subjective Assessment";
-
-    let finalTeacherId = "6a2b27ef72643f1a4b2e7b2f";
-    if (req.user && req.user._id) {
-       finalTeacherId = req.user._id;
-    }
+    const finalTeacherId = req.user._id;
 
     const sCount = Number(shortCount) || 0;
     const lCount = Number(longCount) || 0;
@@ -31,7 +30,6 @@ exports.createAIQuestionQuiz = async (req, res) => {
     let parsedDeadlineDate = deadlineDateTime ? new Date(deadlineDateTime) : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     let extractedText = "";
-
     if (req.file && req.file.mimetype === "application/pdf") {
       try {
           const dataBuffer = fs.readFileSync(req.file.path);
@@ -42,16 +40,15 @@ exports.createAIQuestionQuiz = async (req, res) => {
 
     let formatRequirementText = "";
     if (type === "short") {
-      formatRequirementText = `Generate EXACTLY ${sCount} short questions. \nJSON Layout:\n{ "title": "Short Paper", "description": "...", "shortQuestions": [{ "question": "...", "marks": ${sEach}, "idealAnswer": "Detailed technical answer.", "rubric": "Step-by-step marks allocation." }] }`;
+      formatRequirementText = `Generate EXACTLY ${sCount} short questions. \nJSON Layout:\n{ "title": "...", "description": "...", "shortQuestions": [{ "question": "...", "marks": ${sEach}, "idealAnswer": "...", "rubric": "..." }] }`;
     } else if (type === "long") {
-      formatRequirementText = `Generate EXACTLY ${lCount} long questions. \nJSON Layout:\n{ "title": "Long Paper", "description": "...", "longQuestions": [{ "question": "...", "marks": ${lEach}, "idealAnswer": "In-depth multi-paragraph solution blueprint.", "rubric": "Detailed grading framework (e.g., 2 marks for intro, 3 marks for core logic)." }] }`;
+      formatRequirementText = `Generate EXACTLY ${lCount} long questions. \nJSON Layout:\n{ "title": "...", "description": "...", "longQuestions": [{ "question": "...", "marks": ${lEach}, "idealAnswer": "...", "rubric": "..." }] }`;
     } else {
-      formatRequirementText = `Generate ${sCount} short and ${lCount} long questions. \nJSON Layout:\n{ "title": "Mixed Paper", "description": "...", "shortQuestions": [{ "question": "...", "marks": ${sEach}, "idealAnswer": "...", "rubric": "..." }], "longQuestions": [{ "question": "...", "marks": ${lEach}, "idealAnswer": "...", "rubric": "..." }] }`;
+      formatRequirementText = `Generate ${sCount} short and ${lCount} long questions. \nJSON Layout:\n{ "title": "...", "description": "...", "shortQuestions": [{ "question": "...", "marks": ${sEach}, "idealAnswer": "...", "rubric": "..." }], "longQuestions": [{ "question": "...", "marks": ${lEach}, "idealAnswer": "...", "rubric": "..." }] }`;
     }
 
     const groqPrompt = `You are a Senior Academic Assessor. Generate descriptive exam questions.
-Topic: ${finalTopic}
-Difficulty: ${difficulty}
+Topic: ${finalTopic}\nDifficulty: ${difficulty}
 ${extractedText ? `Reference Text Context:\n${extractedText}\n\n` : ''}
 STRICT RULE: Respond with clean raw JSON only. Provide deeply detailed 'idealAnswer' and a specific 'rubric' for fair grading.
 ${formatRequirementText}`;
@@ -67,34 +64,24 @@ ${formatRequirementText}`;
 
     const uploadDir = path.join(__dirname, "../uploads");
     if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
     const fileName = `quiz-${Date.now()}.pdf`;
     const filePath = path.join(uploadDir, fileName);
 
-    aiData.shortQuestions = dbShortArray;
-    aiData.longQuestions = dbLongArray;
-    aiData.grandTotalMarks = totalMarks;
-
+    aiData.shortQuestions = dbShortArray; aiData.longQuestions = dbLongArray; aiData.grandTotalMarks = totalMarks;
     await generateQuizPDF(aiData, filePath);
 
     const savedQuizModel = new Quiz({
-      course: finalCourseId,
-      teacher: finalTeacherId,
-      title: aiData.title || `Written Exam Paper for ${finalTopic}`,
-      description: aiData.description || "In-Depth Descriptive Assessment",
+      course: finalCourseId, teacher: finalTeacherId,
+      title: aiData.title || `Written Exam Paper for ${finalTopic}`, description: aiData.description || "In-Depth Descriptive Assessment",
       type: type === "both" ? "mixed" : "question",
-      shortQuestions: dbShortArray,
-      longQuestions: dbLongArray,
-      totalMarks: totalMarks,
-      isAIScanned: false,
-      openDateTime: parsedOpenDate,
-      deadlineDateTime: parsedDeadlineDate
+      shortQuestions: dbShortArray, longQuestions: dbLongArray,
+      totalMarks: totalMarks, isAIScanned: false,
+      openDateTime: parsedOpenDate, deadlineDateTime: parsedDeadlineDate
     });
 
     await savedQuizModel.save();
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
 
-    // 🔥 FIXED: CONNECTED GLOBAL NOTIFICATION ENGINE FOR AI GENERATED PAPERS
     try {
       if (finalCourseId && finalCourseId !== "UNKNOWN") {
         const courseData = await Course.findById(finalCourseId).lean();
@@ -105,28 +92,18 @@ ${formatRequirementText}`;
           for (const user of users) {
             if (user.fcmToken && user.fcmToken.trim() !== "") {
               await NotificationService.sendPushNotification(
-                user.fcmToken,
-                "AI Exam Scheduled! 🤖📝",
-                `An AI-generated written exam titled "${savedQuizModel.title}" has been securely scheduled for course ${courseData.title || ''}.`,
+                user.fcmToken, "AI Exam Scheduled! 🤖📝",
+                `An AI-generated written exam titled "${savedQuizModel.title}" has been securely scheduled.`,
                 { courseId: finalCourseId.toString(), type: "quiz" }
               );
             }
           }
         }
       }
-    } catch (notifyErr) {
-      console.log("AI Quiz central notification deployment error:", notifyErr.message);
-    }
+    } catch (notifyErr) { console.log("AI Quiz central notification error:", notifyErr.message); }
 
-    return res.status(200).json({
-      success: true,
-      message: "Quiz generated perfectly using Groq",
-      pdfUrl: `${req.protocol}://${req.get("host")}/uploads/${fileName}`,
-      quiz: savedQuizModel
-    });
-
+    return res.status(200).json({ success: true, message: "Quiz generated perfectly using Groq", pdfUrl: `${req.protocol}://${req.get("host")}/uploads/${fileName}`, quiz: savedQuizModel });
   } catch (error) {
-    console.error("AI Generation Error:", error.message);
     return res.status(500).json({ success: false, message: error.message });
   }
 };

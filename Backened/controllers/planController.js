@@ -15,6 +15,11 @@ const NotificationService = require("../services/notificationService");
 // ===============================
 exports.generatePlan = async (req, res) => {
   try {
+    // 🔒 SECURITY GUARD ADDED
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: "Unauthorized: Please log in." });
+    }
+
     const { courseId, weeks, semesterDuration } = req.body;
 
     if (!courseId || !weeks || !Array.isArray(weeks)) {
@@ -45,7 +50,6 @@ exports.generatePlan = async (req, res) => {
       semesterDuration: semesterDuration || 18,
     });
 
-    // 🔥 FIXED: CONNECTED GLOBAL ENGINE FOR MANUAL PLAN INITIALIZATION
     try {
       const studentIds = course.students.map(s => s.user.toString());
       if (studentIds.length > 0) {
@@ -77,6 +81,11 @@ exports.generatePlan = async (req, res) => {
 // ===============================
 exports.getPlanByCourse = async (req, res) => {
   try {
+    // 🔒 SECURITY GUARD ADDED
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: "Unauthorized: Please log in." });
+    }
+
     const { courseId } = req.params;
     let plan;
 
@@ -94,10 +103,15 @@ exports.getPlanByCourse = async (req, res) => {
 };
 
 // ===============================
-// GENERATE SINGLE WEEK PDF (FIXED FOR NEW AI FIELDS)
+// GENERATE SINGLE WEEK PDF
 // ===============================
 exports.generateWeekPDF = async (req, res) => {
   try {
+    // 🔒 SECURITY GUARD ADDED
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: "Unauthorized: Please log in." });
+    }
+
     const { courseId, weekNumber } = req.params;
 
     const course = await Course.findById(courseId).populate("teacher", "name");
@@ -182,6 +196,11 @@ exports.generateWeekPDF = async (req, res) => {
 // ===============================
 exports.updatePlan = async (req, res) => {
   try {
+    // 🔒 SECURITY GUARD ADDED
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: "Unauthorized: Please log in." });
+    }
+
     const plan = await WeekPlan.findOne({ _id: req.params.id, teacher: req.user._id });
     if (!plan) return res.status(404).json({ success: false, message: "Plan not found" });
 
@@ -198,6 +217,11 @@ exports.updatePlan = async (req, res) => {
 // ===============================
 exports.deletePlan = async (req, res) => {
   try {
+    // 🔒 SECURITY GUARD ADDED
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: "Unauthorized: Please log in." });
+    }
+
     const plan = await WeekPlan.findOne({ _id: req.params.id, teacher: req.user._id });
     if (!plan) return res.status(404).json({ success: false, message: "Plan not found" });
     await plan.deleteOne();
@@ -212,6 +236,11 @@ exports.deletePlan = async (req, res) => {
 // ===============================
 exports.updateWeekAI = async (req, res) => {
   try {
+    // 🔒 SECURITY GUARD ADDED
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: "Unauthorized: Please log in." });
+    }
+
     const { courseId, weekNumber, prompt } = req.body;
     if (!courseId || !weekNumber) return res.status(400).json({ success: false, message: "courseId and weekNumber required" });
 
@@ -265,7 +294,6 @@ RETURN EXACTLY IN THIS JSON FORMAT:
 
     await plan.save();
 
-    // 🔥 FIXED: CONNECTED GLOBAL ENGINE FOR INLINE WEEKLY PLAN OPTIMIZATION ALERTS
     try {
       if (course && course.students) {
         const studentIds = course.students.map(s => s.user.toString());
@@ -299,6 +327,11 @@ RETURN EXACTLY IN THIS JSON FORMAT:
 // ===============================
 exports.deleteWeek = async (req, res) => {
   try {
+    // 🔒 SECURITY GUARD ADDED
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: "Unauthorized: Please log in." });
+    }
+
     const { courseId, weekNumber } = req.params;
     const weekNum = Number(weekNumber);
     if (!courseId || isNaN(weekNum)) return res.status(400).json({ success: false, message: "Invalid input" });
@@ -318,14 +351,25 @@ exports.deleteWeek = async (req, res) => {
   }
 };
 
-exports.generateAIPlanFromBook = async (req, res) => { res.status(200).json({ success: true, message: "Please use AI endpoints." }); };
-exports.generateAIPlan = async (req, res) => { res.status(200).json({ success: true, message: "Please use AI endpoints." }); };
+exports.generateAIPlanFromBook = async (req, res) => {
+  if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized." });
+  res.status(200).json({ success: true, message: "Please use AI endpoints." });
+};
+exports.generateAIPlan = async (req, res) => {
+  if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized." });
+  res.status(200).json({ success: true, message: "Please use AI endpoints." });
+};
 
 // ===============================
-// DOWNLOAD AI FULL PLAN PDF (FIXED FOR NEW AI FIELDS)
+// DOWNLOAD AI FULL PLAN PDF
 // ===============================
 exports.downloadAIPlanPDF = async (req, res) => {
   try {
+    // 🔒 SECURITY GUARD ADDED
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: "Unauthorized: Please log in." });
+    }
+
     const { courseId } = req.params;
 
     const plan = await WeekPlan.findOne({
