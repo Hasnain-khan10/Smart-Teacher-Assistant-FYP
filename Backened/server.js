@@ -16,7 +16,7 @@ const Quiz = require("./models/Quiz");
 const User = require("./models/User");
 const NotificationService = require("./services/notificationService");
 
-// 🔥 SECURITY & PERFORMANCE MODULES (NEW)
+// 🔥 SECURITY & PERFORMANCE MODULES
 const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
 const mongoose = require("mongoose");
@@ -27,11 +27,10 @@ dotenv.config();
 connectDB();
 
 // ========================================================
-// 🔥 MONGO DATABASE INDEXING ENGINE (FOR 10X FASTER SEARCHES)
+// 🔥 MONGO DATABASE INDEXING ENGINE
 // ========================================================
 mongoose.connection.once("open", async () => {
   try {
-    // Indexes create karne se low internet speed par bhi dashboard queries instantly load hongi
     await mongoose.connection.collection("quizzes").createIndex({ deadlineDateTime: 1, course: 1 });
     await mongoose.connection.collection("courses").createIndex({ joinCode: 1 });
     console.log("🚀 Bulletproof Database Search Indexes Synchronized Successfully!");
@@ -43,16 +42,21 @@ mongoose.connection.once("open", async () => {
 const app = express();
 
 // ========================================================
-// 🔒 OWASP SECURITY RATELIMITER & HEADERS (ANTI-HACK ENGINE)
+// 🔒 OWASP SECURITY RATELIMITER & HEADERS (OPTIMIZED FOR MOBILE)
 // ========================================================
-app.use(helmet()); // HTTP Header masking taake backend framework leak na ho
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginOpenerPolicy: false,
+    crossOriginResourcePolicy: false,
+  })
+);
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // Limit each IP to 200 requests per window
+  max: 300,
   message: { message: "Too many backend requests from this device. Please cooldown." }
 });
-app.use("/api/", apiLimiter); // Apply rate limiter to all API routes
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -63,7 +67,7 @@ const io = new Server(server, {
 });
 
 // ========================================================
-// 🔥 FIREBASE ADMIN INITIALIZATION (BULLETPROOF CONFIG)
+// 🔥 FIREBASE ADMIN INITIALIZATION
 // ========================================================
 let isFcmInitialized = false;
 try {
@@ -80,9 +84,9 @@ try {
     });
 
     isFcmInitialized = true;
-    console.log("🔥 Firebase Admin (FCM) Initialized globally for Background Pushes & Sounds!");
+    console.log("🔥 Firebase Admin (FCM) Initialized globally for Background Pushes!");
   } else {
-    console.log("⚠️ FCM Warning: 'firebase-service-account.json' missing. Background pushes paused (Socket running).");
+    console.log("⚠️ FCM Warning: 'firebase-service-account.json' missing.");
   }
 } catch (error) {
   console.log("⚠️ FCM Initialization Error:", error.message);
@@ -98,75 +102,54 @@ if (!fs.existsSync(uploadPath)) {
 app.use(express.json());
 app.use(cors());
 
-// ========================================================
 // 🔥 DUAL NOTIFICATION SYNC ROUTE MIDDLEWARE
-// ========================================================
 app.use((req, res, next) => {
   req.io = io;
-
-  // 🔥 Bridge to trigger real-time socket updates for in-app context synchronously
   req.sendUniversalNotification = async ({ courseId, title, message, type, fcmTokens = [] }) => {
     if (courseId) {
       io.to(courseId.toString()).emit("new_notification", { title, message, type, courseId });
       console.log(`🔌 Sync Socket Alert broadcasted to Course Room: ${courseId}`);
     }
   };
-
   next();
 });
 
 // Real-Time Socket Connection Handlers
 io.on("connection", (socket) => {
   console.log(`🔌 Local Ecosystem Device Connected: ${socket.id}`);
-
   socket.on("join_course_room", (courseId) => {
     socket.join(courseId);
     console.log(`📁 Device successfully registered to Course Room: ${courseId}`);
   });
-
   socket.on("disconnect", () => {
     console.log(`❌ Device Disconnected from Socket: ${socket.id}`);
   });
 });
 
-// Routes
+// ========================================================
+// 🛣️ ROUTES ARCHITECTURE (CLEAN & UNIQUE)
+// ========================================================
 const authRoutes = require("./routes/authRoutes");
-app.use("/api/auth", authRoutes);
+app.use("/api/auth", authRoutes); // Auth completely bypassed from limiting for Google handshake
 
-const courseRoutes = require("./routes/courseRoutes");
-app.use("/api/courses", courseRoutes);
-
-const planRoutes = require("./routes/planRoutes");
-app.use("/api/plans", planRoutes);
-
-const slideRoutes = require("./routes/slideRoutes");
-app.use("/api/slides", slideRoutes);
-
-const pdfRoutes = require("./routes/pdfRoutes");
-app.use("/api/pdf", pdfRoutes);
-
-const quizRoutes = require("./routes/quizRoutes");
-app.use("/api/quizzes", quizRoutes);
-
-const aiCourseRoutes = require("./routes/aiCourseRoutes");
-app.use("/api/ai", aiCourseRoutes);
-
-const aiplanWeekRoutes = require("./routes/aiplanRoutes");
-app.use("/api/ai/plans", aiplanWeekRoutes);
-
-const aiQuizRoutes = require("./routes/aiquizRoutes");
-app.use("/api/ai/quizzes", aiQuizRoutes);
+app.use("/api/courses", apiLimiter, require("./routes/courseRoutes"));
+app.use("/api/plans", apiLimiter, require("./routes/planRoutes"));
+app.use("/api/slides", apiLimiter, require("./routes/slideRoutes"));
+app.use("/api/pdf", apiLimiter, require("./routes/pdfRoutes"));
+app.use("/api/quizzes", apiLimiter, require("./routes/quizRoutes"));
+app.use("/api/ai", apiLimiter, require("./routes/aiCourseRoutes"));
+app.use("/api/ai/plans", apiLimiter, require("./routes/aiplanRoutes"));
+app.use("/api/ai/quizzes", apiLimiter, require("./routes/aiquizRoutes"));
 
 app.use("/uploads", express.static(uploadPath));
 
 app.get("/", (req, res) => {
-  res.send("API is running with Universal Real-time Notification Engine...");
+  res.send("API is running smoothly with Universal Real-time Notification Engine...");
 });
 
 // ==========================================================================
 // 🔥 AUTOMATIC BACKGROUND WORKER: MEMORY-LOCKED SINGLE BLAST ENGINE
 // ==========================================================================
-// Server memory mein notified quizzes ki IDs track karne ke liye set
 const notifiedQuizzesCache = new Set();
 
 cron.schedule("* * * * *", async () => {
@@ -174,7 +157,6 @@ cron.schedule("* * * * *", async () => {
     const now = new Date();
     const twoMinutesAgo = new Date(now.getTime() - 2 * 60 * 1000);
 
-    // 1. Sirf unhi quizzes ko find karein jo window ke andar hain
     const expiredQuizzes = await Quiz.find({
       deadlineDateTime: { $gte: twoMinutesAgo, $lte: now },
       isExpiryNotified: { $ne: true }
@@ -183,13 +165,11 @@ cron.schedule("* * * * *", async () => {
     for (const quiz of expiredQuizzes) {
       const quizIdStr = quiz._id.toString();
 
-      // 🛑 CRITICAL SAFETY GUARD: Agar server memory cache mein ID maujood hai, toh foreign skip karo!
       if (notifiedQuizzesCache.has(quizIdStr)) {
         console.log(`⚠️ Blocked duplicate attempt for Quiz: "${quiz.title}" via Memory Cache.`);
         continue;
       }
 
-      // 🔥 INSTANT MEMORY LOCK: Pehle memory mein block lagao, notification baad mein bhejenge
       notifiedQuizzesCache.add(quizIdStr);
       console.log(`🎯 Processing strict single notification for quiz: "${quiz.title}"`);
 
@@ -212,11 +192,9 @@ cron.schedule("* * * * *", async () => {
         }
       }
 
-      // Database ko backup ke taur par update kar dein
       await Quiz.updateOne({ _id: quiz._id }, { $set: { isExpiryNotified: true } });
       console.log(`✅ Auto-Expiry Notification Sent & Memory Locked for Quiz: "${quiz.title}"`);
 
-      // Memory clean karne ke liye: 5 minute baad cache se ID nikal dein taake ram full na ho
       setTimeout(() => {
         notifiedQuizzesCache.delete(quizIdStr);
       }, 5 * 60 * 1000);
