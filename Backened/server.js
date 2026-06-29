@@ -16,11 +16,43 @@ const Quiz = require("./models/Quiz");
 const User = require("./models/User");
 const NotificationService = require("./services/notificationService");
 
+// 🔥 SECURITY & PERFORMANCE MODULES (NEW)
+const rateLimit = require("express-rate-limit");
+const helmet = require("helmet");
+const mongoose = require("mongoose");
+
 dotenv.config();
 
+// Connect Database
 connectDB();
 
+// ========================================================
+// 🔥 MONGO DATABASE INDEXING ENGINE (FOR 10X FASTER SEARCHES)
+// ========================================================
+mongoose.connection.once("open", async () => {
+  try {
+    // Indexes create karne se low internet speed par bhi dashboard queries instantly load hongi
+    await mongoose.connection.collection("quizzes").createIndex({ deadlineDateTime: 1, course: 1 });
+    await mongoose.connection.collection("courses").createIndex({ joinCode: 1 });
+    console.log("🚀 Bulletproof Database Search Indexes Synchronized Successfully!");
+  } catch (indexErr) {
+    console.log("⚠️ Database Indexing System Warning:", indexErr.message);
+  }
+});
+
 const app = express();
+
+// ========================================================
+// 🔒 OWASP SECURITY RATELIMITER & HEADERS (ANTI-HACK ENGINE)
+// ========================================================
+app.use(helmet()); // HTTP Header masking taake backend framework leak na ho
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200, // Limit each IP to 200 requests per window
+  message: { message: "Too many backend requests from this device. Please cooldown." }
+});
+app.use("/api/", apiLimiter); // Apply rate limiter to all API routes
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -131,11 +163,6 @@ app.get("/", (req, res) => {
   res.send("API is running with Universal Real-time Notification Engine...");
 });
 
-// ==========================================================================
-// 🔥 AUTOMATIC BACKGROUND WORKER: Runs every single minute safely
-// ==========================================================================
-// ==========================================================================
-// 🔥 AUTOMATIC BACKGROUND WORKER: Runs every single minute safely
 // ==========================================================================
 // 🔥 AUTOMATIC BACKGROUND WORKER: MEMORY-LOCKED SINGLE BLAST ENGINE
 // ==========================================================================
